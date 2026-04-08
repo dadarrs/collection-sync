@@ -15,11 +15,13 @@ import (
 	"github.com/dadarrs/collection-sync/internal/plex"
 	"github.com/dadarrs/collection-sync/internal/radarr"
 	"github.com/dadarrs/collection-sync/internal/sonarr"
+	starrradarr "golift.io/starr/radarr"
 	starrsonarr "golift.io/starr/sonarr"
 )
 
 const (
 	statusCountFormat   = "%s: %d\n"
+	totalMoviesFormat   = "\nTotal: %d movies\n"
 	statusAdded         = "added"
 	statusExisting      = "existing"
 	statusFailed        = "failed"
@@ -35,23 +37,20 @@ const (
 )
 
 type CLI struct {
-	List  ListCmd  `cmd:"" help:"List items in a Plex collection."`
-	Check CheckCmd `cmd:"" help:"Check Plex collection items against Sonarr or Radarr."`
-	Sync  SyncCmd  `cmd:"" help:"Sync Plex collection items into Sonarr or Radarr."`
+	TV     TVCmd     `cmd:"" help:"TV show and season operations."`
+	Movies MoviesCmd `cmd:"" help:"Movie operations."`
 }
 
-type ListCmd struct {
-	Movies ListMoviesCmd `cmd:"" help:"List movies in the movie collection."`
-	TV     ListTVCmd     `cmd:"" help:"List TV shows/seasons in the TV collection."`
+type TVCmd struct {
+	List  ListTVCmd  `cmd:"" help:"List TV shows/seasons in the TV collection."`
+	Check CheckTVCmd `cmd:"" help:"Check TV shows/seasons from Plex against Sonarr."`
+	Sync  SyncTVCmd  `cmd:"" help:"Add missing TV shows from Plex into Sonarr."`
 }
 
-type CheckCmd struct {
-	Movies CheckMoviesCmd `cmd:"" help:"Check movies from Plex against Radarr."`
-	TV     CheckTVCmd     `cmd:"" help:"Check TV shows/seasons from Plex against Sonarr."`
-}
-
-type SyncCmd struct {
-	TV SyncTVCmd `cmd:"" help:"Add missing TV shows from Plex into Sonarr."`
+type MoviesCmd struct {
+	List  ListMoviesCmd  `cmd:"" help:"List movies in the movie collection."`
+	Check CheckMoviesCmd `cmd:"" help:"Check movies from Plex against Radarr."`
+	Sync  SyncMoviesCmd  `cmd:"" help:"Add missing movies from Plex into Radarr."`
 }
 
 type ListMoviesCmd struct{}
@@ -73,7 +72,7 @@ func (c *ListMoviesCmd) Run(d *deps) error {
 		fmt.Fprintf(w, "%d\t%s\t%d\t%d\t%s\n", i+1, item.Title, item.TMDBID, item.TVDBID, item.RatingKey)
 	}
 	w.Flush()
-	fmt.Printf("\nTotal: %d movies\n", len(items))
+	fmt.Printf(totalMoviesFormat, len(items))
 	return nil
 }
 
@@ -114,8 +113,13 @@ type CheckTVCmd struct{}
 
 type CheckMoviesCmd struct{}
 
+type SyncMoviesCmd struct {
+	Number *int `arg:"" optional:"" name:"number" help:"Row number from 'movies list' to sync."`
+	DryRun bool `help:"Preview sync changes without modifying Radarr."`
+}
+
 type SyncTVCmd struct {
-	Number *int `arg:"" optional:"" name:"number" help:"Row number from 'list tv' to sync."`
+	Number *int `arg:"" optional:"" name:"number" help:"Row number from 'tv list' to sync."`
 	DryRun bool `help:"Preview sync changes without modifying Sonarr."`
 }
 
@@ -146,7 +150,7 @@ func (c *CheckMoviesCmd) Run(d *deps) error {
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", i+1, item.Title, status, matchBy, detail)
 	}
 	w.Flush()
-	fmt.Printf("\nTotal: %d movies\n", len(items))
+	fmt.Printf(totalMoviesFormat, len(items))
 	printMovieCheckSummary(statusCounts)
 	return nil
 }
@@ -235,6 +239,56 @@ func (c *SyncTVCmd) Run(d *deps) error {
 	return nil
 }
 
+func (c *SyncMoviesCmd) Run(d *deps) error {
+	if err := d.validateMovieCheckConfig(); err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	items, err := d.resolveCollection(ctx, d.cfg.MovieCollectionName)
+	if err != nil {
+		return err
+	}
+	items, err = selectMovieSyncItems(items, c.Number)
+	if err != nil {
+		return err
+	}
+
+	targets := buildMovieSyncTargets(items)
+	lookupCache := make(map[string]cachedMovieLookup)
+	statusCounts := make(map[string]int)
+	var defaults radarr.AddMovieDefaults
+	defaultsResolved := false
+	var errs []error
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintf(w, "#\tTITLE\tTMDB\tSTATUS\tDETAIL\n")
+	for i, target := range targets {
+		lookup, err := d.getCachedMovieLookup(ctx, lookupCache, target.Title, target.TMDBID)
+		if err != nil {
+			statusCounts[statusFailed]++
+			err = fmt.Errorf("looking up %q in Radarr: %w", target.Title, err)
+			errs = append(errs, err)
+			fmt.Fprintf(w, "%d\t%s\t%d\t%s\t%s\n", i+1, target.Title, target.TMDBID, statusFailed, err.Error())
+			continue
+		}
+
+		status, detail, syncErr := d.syncMovieTarget(ctx, target, lookup, &defaults, &defaultsResolved, c.DryRun)
+		statusCounts[status]++
+		if syncErr != nil {
+			errs = append(errs, syncErr)
+		}
+		fmt.Fprintf(w, "%d\t%s\t%d\t%s\t%s\n", i+1, target.Title, target.TMDBID, status, detail)
+	}
+	w.Flush()
+	fmt.Printf(totalMoviesFormat, len(targets))
+	printMovieSyncSummary(statusCounts)
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
 type cachedLookup struct {
 	match *sonarr.SeriesMatch
 	err   error
@@ -243,6 +297,11 @@ type cachedLookup struct {
 type cachedMovieLookup struct {
 	match *radarr.MovieMatch
 	err   error
+}
+
+type movieSyncTarget struct {
+	Title  string
+	TMDBID int64
 }
 
 type tvSyncTarget struct {
@@ -332,6 +391,16 @@ func (d *deps) syncTVTarget(ctx context.Context, target tvSyncTarget, lookup cac
 		return statusFailed, "unexpected empty Sonarr lookup result", errors.New("unexpected empty Sonarr lookup result")
 	}
 	return d.updateExistingTVSeries(ctx, target, lookup.match, dryRun)
+}
+
+func (d *deps) syncMovieTarget(ctx context.Context, target movieSyncTarget, lookup cachedMovieLookup, defaults *radarr.AddMovieDefaults, defaultsResolved *bool, dryRun bool) (string, string, error) {
+	if errors.Is(lookup.err, radarr.ErrMovieNotFound) {
+		return d.addMissingMovie(ctx, target, defaults, defaultsResolved, dryRun)
+	}
+	if lookup.match == nil {
+		return statusFailed, "unexpected empty Radarr lookup result", errors.New("unexpected empty Radarr lookup result")
+	}
+	return d.updateExistingMovie(ctx, target, lookup.match, dryRun)
 }
 
 func (d *deps) addMissingTVSeries(ctx context.Context, target tvSyncTarget, defaults *sonarr.AddSeriesDefaults, defaultsResolved *bool, dryRun bool) (string, string, error) {
@@ -431,6 +500,88 @@ func (d *deps) updateExistingTVSeries(ctx context.Context, target tvSyncTarget, 
 	return statusUpdated, detail, searchErr
 }
 
+func (d *deps) addMissingMovie(ctx context.Context, target movieSyncTarget, defaults *radarr.AddMovieDefaults, defaultsResolved *bool, dryRun bool) (string, string, error) {
+	if target.TMDBID == 0 {
+		return statusSkipped, "Plex item has no TMDB ID; cannot add to Radarr", nil
+	}
+
+	resolvedDefaults, err := d.resolveRadarrAddDefaults(ctx, defaults, defaultsResolved)
+	if err != nil {
+		return statusFailed, err.Error(), err
+	}
+	if dryRun {
+		candidateTitle, err := d.radarr.PreviewCreateMovie(ctx, radarr.CreateMovieRequest{
+			Title:          target.Title,
+			TMDBID:         target.TMDBID,
+			SearchForMovie: d.cfg.SearchAdded,
+		}, resolvedDefaults)
+		if err != nil {
+			wrappedErr := fmt.Errorf("previewing add for %q in Radarr: %w", target.Title, err)
+			return statusFailed, wrappedErr.Error(), wrappedErr
+		}
+		detail := fmt.Sprintf("would add %s with profile %s in %s", candidateTitle, resolvedDefaults.QualityProfileName, resolvedDefaults.RootFolderPath)
+		if d.cfg.SearchAdded {
+			detail = appendDetail(detail, "would ask Radarr to search for the movie after add")
+		}
+		return statusWouldAdd, detail, nil
+	}
+
+	movie, err := d.radarr.CreateMovie(ctx, radarr.CreateMovieRequest{
+		Title:          target.Title,
+		TMDBID:         target.TMDBID,
+		SearchForMovie: d.cfg.SearchAdded,
+	}, resolvedDefaults)
+	if err != nil {
+		wrappedErr := fmt.Errorf("adding %q to Radarr: %w", target.Title, err)
+		return statusFailed, wrappedErr.Error(), wrappedErr
+	}
+
+	detail := fmt.Sprintf("added %s with profile %s in %s", movie.Title, resolvedDefaults.QualityProfileName, resolvedDefaults.RootFolderPath)
+	if d.cfg.SearchAdded {
+		detail = appendDetail(detail, "Radarr will search for the movie after add")
+	}
+	return statusAdded, detail, nil
+}
+
+func (d *deps) updateExistingMovie(ctx context.Context, target movieSyncTarget, match *radarr.MovieMatch, dryRun bool) (string, string, error) {
+	if dryRun {
+		changed, err := d.radarr.PreviewUpdateMovieMonitoring(match.Movie, true)
+		if err != nil {
+			wrappedErr := fmt.Errorf("previewing update for %q in Radarr: %w", target.Title, err)
+			return statusFailed, wrappedErr.Error(), wrappedErr
+		}
+		if !changed {
+			detail := fmt.Sprintf("already in Radarr as %s; monitoring already enabled", match.Movie.Title)
+			if d.cfg.SearchExisting {
+				detail = appendDetail(detail, fmt.Sprintf("would queue Radarr search for %s", match.Movie.Title))
+			}
+			return statusExisting, detail, nil
+		}
+		detail := fmt.Sprintf("would update %s to monitor the movie", match.Movie.Title)
+		if d.cfg.SearchAdded {
+			detail = appendDetail(detail, fmt.Sprintf("would queue Radarr search for %s", match.Movie.Title))
+		}
+		return statusWouldUpdate, detail, nil
+	}
+
+	updated, changed, err := d.radarr.UpdateMovieMonitoring(ctx, match.Movie, true)
+	if err != nil {
+		wrappedErr := fmt.Errorf("updating %q in Radarr: %w", target.Title, err)
+		return statusFailed, wrappedErr.Error(), wrappedErr
+	}
+	if !changed {
+		detail := fmt.Sprintf("already in Radarr as %s; monitoring already enabled", match.Movie.Title)
+		searchNote, searchErr := d.searchMovie(ctx, match.Movie, d.cfg.SearchExisting)
+		detail = appendDetail(detail, searchNote)
+		return statusExisting, detail, searchErr
+	}
+
+	detail := fmt.Sprintf("updated %s to monitor the movie", updated.Title)
+	searchNote, searchErr := d.searchMovie(ctx, updated, d.cfg.SearchAdded)
+	detail = appendDetail(detail, searchNote)
+	return statusUpdated, detail, searchErr
+}
+
 func (d *deps) resolveSonarrAddDefaults(ctx context.Context, defaults *sonarr.AddSeriesDefaults, defaultsResolved *bool) (sonarr.AddSeriesDefaults, error) {
 	if *defaultsResolved {
 		return *defaults, nil
@@ -439,6 +590,20 @@ func (d *deps) resolveSonarrAddDefaults(ctx context.Context, defaults *sonarr.Ad
 	resolvedDefaults, err := d.sonarr.ResolveAddSeriesDefaults(ctx, d.cfg.SonarrRootFolder, d.cfg.SonarrQualityProfile)
 	if err != nil {
 		return sonarr.AddSeriesDefaults{}, err
+	}
+	*defaults = resolvedDefaults
+	*defaultsResolved = true
+	return resolvedDefaults, nil
+}
+
+func (d *deps) resolveRadarrAddDefaults(ctx context.Context, defaults *radarr.AddMovieDefaults, defaultsResolved *bool) (radarr.AddMovieDefaults, error) {
+	if *defaultsResolved {
+		return *defaults, nil
+	}
+
+	resolvedDefaults, err := d.radarr.ResolveAddMovieDefaults(ctx, d.cfg.RadarrRootFolder, d.cfg.RadarrQualityProfile)
+	if err != nil {
+		return radarr.AddMovieDefaults{}, err
 	}
 	*defaults = resolvedDefaults
 	*defaultsResolved = true
@@ -539,6 +704,14 @@ func printTVSyncSummary(statusCounts map[string]int) {
 	}
 }
 
+func printMovieSyncSummary(statusCounts map[string]int) {
+	for _, status := range []string{statusAdded, statusUpdated, statusWouldAdd, statusWouldUpdate, statusExisting, statusSkipped, statusFailed} {
+		if count := statusCounts[status]; count > 0 {
+			fmt.Printf(statusCountFormat, status, count)
+		}
+	}
+}
+
 func printMovieCheckSummary(statusCounts map[string]int) {
 	for _, status := range []string{statusPresent, statusMissingMovie, statusUnmonitored} {
 		if count := statusCounts[status]; count > 0 {
@@ -598,12 +771,52 @@ func buildTVSyncTargets(items []plex.Item) []tvSyncTarget {
 	return targets
 }
 
+func buildMovieSyncTargets(items []plex.Item) []movieSyncTarget {
+	targetMap := make(map[string]*movieSyncTarget)
+	for _, item := range items {
+		lookupKey := radarrLookupKey(item.Title, item.TMDBID)
+		target, ok := targetMap[lookupKey]
+		if !ok {
+			target = &movieSyncTarget{
+				Title:  item.Title,
+				TMDBID: item.TMDBID,
+			}
+			targetMap[lookupKey] = target
+		}
+		if target.TMDBID == 0 && item.TMDBID != 0 {
+			target.TMDBID = item.TMDBID
+		}
+	}
+
+	targets := make([]movieSyncTarget, 0, len(targetMap))
+	for _, target := range targetMap {
+		targets = append(targets, *target)
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].Title == targets[j].Title {
+			return targets[i].TMDBID < targets[j].TMDBID
+		}
+		return targets[i].Title < targets[j].Title
+	})
+	return targets
+}
+
 func selectTVSyncItems(items []plex.Item, rowNumber *int) ([]plex.Item, error) {
 	if rowNumber == nil {
 		return items, nil
 	}
 	if *rowNumber < 1 || *rowNumber > len(items) {
 		return nil, fmt.Errorf("tv row %d is out of range; valid rows are 1-%d", *rowNumber, len(items))
+	}
+	return []plex.Item{items[*rowNumber-1]}, nil
+}
+
+func selectMovieSyncItems(items []plex.Item, rowNumber *int) ([]plex.Item, error) {
+	if rowNumber == nil {
+		return items, nil
+	}
+	if *rowNumber < 1 || *rowNumber > len(items) {
+		return nil, fmt.Errorf("movie row %d is out of range; valid rows are 1-%d", *rowNumber, len(items))
 	}
 	return []plex.Item{items[*rowNumber-1]}, nil
 }
@@ -697,6 +910,19 @@ func appendTVSearchPreview(detail string, searchLabel string, seasonNumbers []in
 		return appendDetail(detail, fmt.Sprintf("would queue Sonarr search for %s", searchLabel))
 	}
 	return appendDetail(detail, fmt.Sprintf("would queue Sonarr search for %s", formatSeasonLabels(seasonNumbers)))
+}
+
+func (d *deps) searchMovie(ctx context.Context, movie *starrradarr.Movie, enabled bool) (string, error) {
+	if !enabled {
+		return "", nil
+	}
+	if movie == nil {
+		return "", errors.New("cannot queue Radarr movie search without a movie")
+	}
+	if err := d.radarr.SearchMovie(ctx, movie.ID); err != nil {
+		return fmt.Sprintf("search queue failed for %s", movie.Title), err
+	}
+	return fmt.Sprintf("queued Radarr search for %s", movie.Title), nil
 }
 
 func (d *deps) searchTVSeasons(ctx context.Context, series *starrsonarr.Series, seasonNumbers []int, enabled bool) (string, error) {
