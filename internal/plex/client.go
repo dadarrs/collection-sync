@@ -10,13 +10,24 @@ import (
 	"strings"
 )
 
+const (
+	acceptHeader    = "Accept"
+	jsonMimeType    = "application/json"
+	plexTokenHeader = "X-Plex-Token"
+)
+
 // Item represents a minimal Plex media item from a collection.
 type Item struct {
-	RatingKey string
-	Title     string
-	Type      string // "show" or "movie"
-	TVDBID    int64
-	TMDBID    int64
+	RatingKey       string
+	Title           string
+	Type            string // "show" or "movie"
+	ParentTitle     string
+	ParentRatingKey string
+	Index           int
+	TVDBID          int64
+	TMDBID          int64
+	ShowTVDBID      int64
+	ShowTMDBID      int64
 }
 
 // Client wraps Plex Media Server API calls for the operations needed by this service.
@@ -45,14 +56,28 @@ type sectionsResponse struct {
 	} `json:"MediaContainer"`
 }
 
+type externalIDs struct {
+	tvdb int64
+	tmdb int64
+}
+
+type collectionMetadata struct {
+	RatingKey       string          `json:"ratingKey"`
+	Title           string          `json:"title"`
+	Type            string          `json:"type"`
+	ParentTitle     string          `json:"parentTitle"`
+	ParentRatingKey string          `json:"parentRatingKey"`
+	Index           int             `json:"index"`
+	Guid            json.RawMessage `json:"Guid"`
+}
+
 // listSections fetches library sections via a direct HTTP call.
 func (c *Client) listSections(ctx context.Context) ([]section, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.serverURL+"/library/sections", nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", c.token)
+	setHeaders(req, c.token)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -93,8 +118,7 @@ func (c *Client) FindCollectionByName(ctx context.Context, name string) (string,
 		if err != nil {
 			return "", fmt.Errorf("building request: %w", err)
 		}
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Plex-Token", c.token)
+		setHeaders(req, c.token)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -126,12 +150,7 @@ func (c *Client) FindCollectionByName(ctx context.Context, name string) (string,
 // union-type deserialization bugs in the plexgo SDK.
 type collectionItemsResponse struct {
 	MediaContainer struct {
-		Metadata []struct {
-			RatingKey string          `json:"ratingKey"`
-			Title     string          `json:"title"`
-			Type      string          `json:"type"`
-			Guid      json.RawMessage `json:"Guid"`
-		} `json:"Metadata"`
+		Metadata []collectionMetadata `json:"Metadata"`
 	} `json:"MediaContainer"`
 }
 
@@ -189,8 +208,7 @@ func (c *Client) getExternalIDs(ctx context.Context, ratingKey string) (tvdb, tm
 	if err != nil {
 		return 0, 0, err
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", c.token)
+	setHeaders(req, c.token)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -219,8 +237,7 @@ func (c *Client) GetCollectionItems(ctx context.Context, collectionKey string) (
 	if err != nil {
 		return nil, fmt.Errorf("building request: %w", err)
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Plex-Token", c.token)
+	setHeaders(req, c.token)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -237,31 +254,72 @@ func (c *Client) GetCollectionItems(ctx context.Context, collectionKey string) (
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
+	parentIDs := make(map[string]externalIDs)
 	var items []Item
 	for _, meta := range body.MediaContainer.Metadata {
-		item := Item{
-			RatingKey: meta.RatingKey,
-			Title:     meta.Title,
-			Type:      meta.Type,
-		}
-
-		// The collection list endpoint includes Guid only when available.
-		item.TVDBID, item.TMDBID = extractIDs(parseGuids(meta.Guid))
-
-		// If no external IDs were found, fetch the full metadata for this item.
-		if item.TVDBID == 0 && item.TMDBID == 0 && item.RatingKey != "" {
-			tvdb, tmdb, err := c.getExternalIDs(ctx, item.RatingKey)
-			if err != nil {
-				slog.Warn("failed to fetch metadata for item", "ratingKey", item.RatingKey, "error", err)
-			} else {
-				item.TVDBID = tvdb
-				item.TMDBID = tmdb
-			}
-		}
-
+		item := c.newCollectionItem(ctx, meta, parentIDs)
 		slog.Debug("collection item", "title", item.Title, "type", item.Type, "tvdb", item.TVDBID, "tmdb", item.TMDBID)
 		items = append(items, item)
 	}
 
 	return items, nil
+}
+
+func setHeaders(req *http.Request, token string) {
+	req.Header.Set(acceptHeader, jsonMimeType)
+	req.Header.Set(plexTokenHeader, token)
+}
+
+func (c *Client) newCollectionItem(ctx context.Context, meta collectionMetadata, parentIDs map[string]externalIDs) Item {
+	item := Item{
+		RatingKey:       meta.RatingKey,
+		Title:           meta.Title,
+		Type:            meta.Type,
+		ParentTitle:     meta.ParentTitle,
+		ParentRatingKey: meta.ParentRatingKey,
+		Index:           meta.Index,
+	}
+
+	ids := c.resolveExternalIDs(ctx, item.RatingKey, meta.Guid, "item")
+	item.TVDBID = ids.tvdb
+	item.TMDBID = ids.tmdb
+	item.ShowTVDBID = ids.tvdb
+	item.ShowTMDBID = ids.tmdb
+
+	if item.Type == "season" {
+		parent := c.resolveParentIDs(ctx, item.ParentRatingKey, parentIDs)
+		item.ShowTVDBID = parent.tvdb
+		item.ShowTMDBID = parent.tmdb
+	}
+
+	return item
+}
+
+func (c *Client) resolveExternalIDs(ctx context.Context, ratingKey string, guid json.RawMessage, lookupType string) externalIDs {
+	tvdb, tmdb := extractIDs(parseGuids(guid))
+	if tvdb != 0 || tmdb != 0 || ratingKey == "" {
+		return externalIDs{tvdb: tvdb, tmdb: tmdb}
+	}
+
+	tvdb, tmdb, err := c.getExternalIDs(ctx, ratingKey)
+	if err != nil {
+		slog.Warn("failed to fetch metadata", "lookupType", lookupType, "ratingKey", ratingKey, "error", err)
+		return externalIDs{}
+	}
+
+	return externalIDs{tvdb: tvdb, tmdb: tmdb}
+}
+
+func (c *Client) resolveParentIDs(ctx context.Context, parentRatingKey string, parentIDs map[string]externalIDs) externalIDs {
+	if parentRatingKey == "" {
+		return externalIDs{}
+	}
+
+	if ids, ok := parentIDs[parentRatingKey]; ok {
+		return ids
+	}
+
+	ids := c.resolveExternalIDs(ctx, parentRatingKey, nil, "parent")
+	parentIDs[parentRatingKey] = ids
+	return ids
 }

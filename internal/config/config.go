@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // Config holds all runtime configuration loaded from environment variables.
@@ -11,8 +13,12 @@ type Config struct {
 	PlexURL   string
 	PlexToken string
 
-	SonarrURL    string
-	SonarrAPIKey string
+	SonarrURL            string
+	SonarrAPIKey         string
+	SonarrRootFolder     string
+	SonarrQualityProfile string
+	SearchAdded          bool
+	SearchExisting       bool
 
 	RadarrURL    string
 	RadarrAPIKey string
@@ -29,12 +35,25 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("loading .env: %w", err)
 	}
 
+	searchAdded, err := loadBoolEnv("SEARCH_ADDED")
+	if err != nil {
+		return nil, err
+	}
+	searchExisting, err := loadBoolEnv("SEARCH_EXISTING")
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		PlexURL:   os.Getenv("PLEX_URL"),
 		PlexToken: os.Getenv("PLEX_TOKEN"),
 
-		SonarrURL:    os.Getenv("SONARR_URL"),
-		SonarrAPIKey: os.Getenv("SONARR_API_KEY"),
+		SonarrURL:            os.Getenv("SONARR_URL"),
+		SonarrAPIKey:         os.Getenv("SONARR_API_KEY"),
+		SonarrRootFolder:     os.Getenv("SONARR_ROOT_FOLDER"),
+		SonarrQualityProfile: os.Getenv("SONARR_QUALITY_PROFILE"),
+		SearchAdded:          searchAdded,
+		SearchExisting:       searchExisting,
 
 		RadarrURL:    os.Getenv("RADARR_URL"),
 		RadarrAPIKey: os.Getenv("RADARR_API_KEY"),
@@ -63,4 +82,18 @@ func (c *Config) validate() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+func loadBoolEnv(name string) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return false, nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("parsing %s: %w", name, err)
+	}
+
+	return parsed, nil
 }
