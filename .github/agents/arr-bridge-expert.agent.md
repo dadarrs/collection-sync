@@ -1,5 +1,5 @@
 ---
-description: "Use when: writing or reviewing Go code for this project; working with Sonarr/Radarr/*arr APIs; Plex API or plexgo SDK; Docker/containerization; Go best practices; bridge logic between Plex collections and arr apps; sync logic; API client design; adding features to maintainerr-bridge"
+description: "Use when: writing or reviewing Go code for this project; working with Sonarr/Radarr/*arr APIs; Plex API or plexgo SDK; Docker/containerization; Go best practices; bridge logic between Plex collections and arr apps; sync logic; API client design; adding features to collection-sync"
 name: "Arr Bridge Expert"
 tools: [read, edit, search, execute, web, todo, agent]
 ---

@@ -3,10 +3,10 @@ package bridge
 import (
 	"context"
 
-	"github.com/enddzone/maintainerr-bridge/internal/config"
-	"github.com/enddzone/maintainerr-bridge/internal/plex"
-	"github.com/enddzone/maintainerr-bridge/internal/radarr"
-	"github.com/enddzone/maintainerr-bridge/internal/sonarr"
+	"github.com/dadarrs/collection-sync/internal/config"
+	"github.com/dadarrs/collection-sync/internal/plex"
+	"github.com/dadarrs/collection-sync/internal/radarr"
+	"github.com/dadarrs/collection-sync/internal/sonarr"
 )
 
 // Bridge orchestrates reading Plex collections and syncing items to Sonarr and Radarr.

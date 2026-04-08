@@ -12,12 +12,12 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w" \
-    -o /maintainerr-bridge \
-    ./cmd/maintainerr-bridge
+    -o /collection-sync \
+    ./cmd/collection-sync
 
 FROM scratch
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /maintainerr-bridge /maintainerr-bridge
+COPY --from=builder /collection-sync /collection-sync
 
-ENTRYPOINT ["/maintainerr-bridge"]
+ENTRYPOINT ["/collection-sync"]

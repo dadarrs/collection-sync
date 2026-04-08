@@ -11,10 +11,10 @@ import (
 	"text/tabwriter"
 
 	"github.com/alecthomas/kong"
-	"github.com/enddzone/maintainerr-bridge/internal/config"
-	"github.com/enddzone/maintainerr-bridge/internal/plex"
-	"github.com/enddzone/maintainerr-bridge/internal/radarr"
-	"github.com/enddzone/maintainerr-bridge/internal/sonarr"
+	"github.com/dadarrs/collection-sync/internal/config"
+	"github.com/dadarrs/collection-sync/internal/plex"
+	"github.com/dadarrs/collection-sync/internal/radarr"
+	"github.com/dadarrs/collection-sync/internal/sonarr"
 	starrsonarr "golift.io/starr/sonarr"
 )
 
@@ -768,7 +768,7 @@ func main() {
 
 	var cli CLI
 	ctx := kong.Parse(&cli,
-		kong.Name("maintainerr-bridge"),
+		kong.Name("collection-sync"),
 		kong.Description("Bridge between Plex collections and *arr apps."),
 		kong.UsageOnError(),
 		kong.Bind(appDeps),

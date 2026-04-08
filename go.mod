@@ -1,4 +1,4 @@
-module github.com/enddzone/maintainerr-bridge
+module github.com/dadarrs/collection-sync
 
 go 1.26
 
@@ -9,5 +9,5 @@ require (
 
 require (
 	github.com/alecthomas/kong v1.15.0 // indirect
-	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
 )
