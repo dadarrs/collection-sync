@@ -20,8 +20,10 @@ type Config struct {
 	SearchAdded          bool
 	SearchExisting       bool
 
-	RadarrURL    string
-	RadarrAPIKey string
+	RadarrURL            string
+	RadarrAPIKey         string
+	RadarrRootFolder     string
+	RadarrQualityProfile string
 
 	TVCollectionName    string
 	MovieCollectionName string
@@ -55,8 +57,10 @@ func Load() (*Config, error) {
 		SearchAdded:          searchAdded,
 		SearchExisting:       searchExisting,
 
-		RadarrURL:    os.Getenv("RADARR_URL"),
-		RadarrAPIKey: os.Getenv("RADARR_API_KEY"),
+		RadarrURL:            os.Getenv("RADARR_URL"),
+		RadarrAPIKey:         os.Getenv("RADARR_API_KEY"),
+		RadarrRootFolder:     os.Getenv("RADARR_ROOT_FOLDER"),
+		RadarrQualityProfile: os.Getenv("RADARR_QUALITY_PROFILE"),
 
 		TVCollectionName:    os.Getenv("PLEX_TV_COLLECTION"),
 		MovieCollectionName: os.Getenv("PLEX_MOVIE_COLLECTION"),
