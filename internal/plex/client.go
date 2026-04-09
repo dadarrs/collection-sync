@@ -68,7 +68,7 @@ type collectionMetadata struct {
 	ParentTitle     string          `json:"parentTitle"`
 	ParentRatingKey string          `json:"parentRatingKey"`
 	Index           int             `json:"index"`
-	Guid            json.RawMessage `json:"Guid"`
+	GUID            json.RawMessage `json:"Guid"`
 }
 
 // listSections fetches library sections via a direct HTTP call.
@@ -83,7 +83,9 @@ func (c *Client) listSections(ctx context.Context) ([]section, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
@@ -128,7 +130,9 @@ func (c *Client) FindCollectionByName(ctx context.Context, name string) (string,
 
 		var body collectionsResponse
 		err = json.NewDecoder(resp.Body).Decode(&body)
-		resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			slog.Warn("closing collections response failed", "section", sec.Key, "error", closeErr)
+		}
 		if err != nil {
 			slog.Warn("decoding collections response failed", "section", sec.Key, "error", err)
 			continue
@@ -197,7 +201,7 @@ func extractIDs(guids []guidEntry) (tvdb, tmdb int64) {
 type metadataResponse struct {
 	MediaContainer struct {
 		Metadata []struct {
-			Guid json.RawMessage `json:"Guid"`
+			GUID json.RawMessage `json:"Guid"`
 		} `json:"Metadata"`
 	} `json:"MediaContainer"`
 }
@@ -214,7 +218,9 @@ func (c *Client) getExternalIDs(ctx context.Context, ratingKey string) (tvdb, tm
 	if err != nil {
 		return 0, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, 0, fmt.Errorf("unexpected status %d", resp.StatusCode)
@@ -227,7 +233,7 @@ func (c *Client) getExternalIDs(ctx context.Context, ratingKey string) (tvdb, tm
 	if len(body.MediaContainer.Metadata) == 0 {
 		return 0, 0, nil
 	}
-	tvdb, tmdb = extractIDs(parseGuids(body.MediaContainer.Metadata[0].Guid))
+	tvdb, tmdb = extractIDs(parseGuids(body.MediaContainer.Metadata[0].GUID))
 	return tvdb, tmdb, nil
 }
 
@@ -243,7 +249,9 @@ func (c *Client) GetCollectionItems(ctx context.Context, collectionKey string) (
 	if err != nil {
 		return nil, fmt.Errorf("fetching collection items: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status %d for collection %s", resp.StatusCode, collectionKey)
@@ -280,7 +288,7 @@ func (c *Client) newCollectionItem(ctx context.Context, meta collectionMetadata,
 		Index:           meta.Index,
 	}
 
-	ids := c.resolveExternalIDs(ctx, item.RatingKey, meta.Guid, "item")
+	ids := c.resolveExternalIDs(ctx, item.RatingKey, meta.GUID, "item")
 	item.TVDBID = ids.tvdb
 	item.TMDBID = ids.tmdb
 	item.ShowTVDBID = ids.tvdb

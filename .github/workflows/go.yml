@@ -1,7 +1,6 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+# This workflow runs the core Go quality checks for the project.
 
-name: go_build
+name: ci
 
 on:
   push:
@@ -12,8 +11,7 @@ on:
 permissions:
   contents: read
 jobs:
-
-  build:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -23,8 +21,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --timeout=5m
+
       - name: Build
-        run: go build -v ./...
+        run: make build
 
       - name: Test
-        run: go test -v ./...
+        run: make test

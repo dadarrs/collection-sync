@@ -29,6 +29,6 @@ func New(cfg *config.Config, plexClient *plex.Client, sonarrClient *sonarr.Clien
 
 // Run reads the TV and movie Plex collections and ensures each item exists
 // in Sonarr or Radarr respectively.
-func (b *Bridge) Run(ctx context.Context) error {
+func (b *Bridge) Run(_ context.Context) error {
 	return nil
 }

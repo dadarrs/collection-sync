@@ -20,26 +20,15 @@ func loadDotEnv(path string) error {
 		}
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
+		key, value, ok := parseDotEnvLine(scanner.Text())
 		if !ok {
 			continue
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		// Strip surrounding single or double quotes.
-		if len(value) >= 2 {
-			if (value[0] == '"' && value[len(value)-1] == '"') ||
-				(value[0] == '\'' && value[len(value)-1] == '\'') {
-				value = value[1 : len(value)-1]
-			}
 		}
 		if _, exists := os.LookupEnv(key); !exists {
 			if err := os.Setenv(key, value); err != nil {
@@ -48,4 +37,33 @@ func loadDotEnv(path string) error {
 		}
 	}
 	return scanner.Err()
+}
+
+func parseDotEnvLine(raw string) (string, string, bool) {
+	line := strings.TrimSpace(raw)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+
+	key, value, ok := strings.Cut(line, "=")
+	if !ok {
+		return "", "", false
+	}
+
+	key = strings.TrimSpace(key)
+	value = trimMatchingQuotes(strings.TrimSpace(value))
+	return key, value, true
+}
+
+func trimMatchingQuotes(value string) string {
+	if len(value) < 2 {
+		return value
+	}
+
+	if (value[0] == '"' && value[len(value)-1] == '"') ||
+		(value[0] == '\'' && value[len(value)-1] == '\'') {
+		return value[1 : len(value)-1]
+	}
+
+	return value
 }

@@ -296,7 +296,7 @@ func (c *Client) resolveRootFolder(ctx context.Context, selector string) (*starr
 		return rootFolder, nil
 	}
 
-	return nil, fmt.Errorf("Radarr root folder %q not found; available options: %s", selector, joinRootFolderPaths(accessible))
+	return nil, fmt.Errorf("radarr root folder %q not found; available options: %s", selector, joinRootFolderPaths(accessible))
 }
 
 func (c *Client) resolveQualityProfile(ctx context.Context, selector string) (*starrradarr.QualityProfile, error) {
@@ -320,7 +320,7 @@ func (c *Client) resolveQualityProfile(ctx context.Context, selector string) (*s
 		return profile, nil
 	}
 
-	return nil, fmt.Errorf("Radarr quality profile %q not found; available options: %s", selector, joinQualityProfileNames(profiles))
+	return nil, fmt.Errorf("radarr quality profile %q not found; available options: %s", selector, joinQualityProfileNames(profiles))
 }
 
 func matchRootFolder(rootFolders []*starrradarr.RootFolder, selector string) (*starrradarr.RootFolder, bool) {
