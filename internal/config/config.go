@@ -49,25 +49,25 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		PlexURL:   os.Getenv("PLEX_URL"),
-		PlexToken: os.Getenv("PLEX_TOKEN"),
+		PlexURL:   loadStringEnv("PLEX_URL"),
+		PlexToken: loadStringEnv("PLEX_TOKEN"),
 
-		SonarrURL:            os.Getenv("SONARR_URL"),
-		SonarrAPIKey:         os.Getenv("SONARR_API_KEY"),
-		SonarrRootFolder:     os.Getenv("SONARR_ROOT_FOLDER"),
-		SonarrQualityProfile: os.Getenv("SONARR_QUALITY_PROFILE"),
+		SonarrURL:            loadStringEnv("SONARR_URL"),
+		SonarrAPIKey:         loadStringEnv("SONARR_API_KEY"),
+		SonarrRootFolder:     loadStringEnv("SONARR_ROOT_FOLDER"),
+		SonarrQualityProfile: loadStringEnv("SONARR_QUALITY_PROFILE"),
 		SearchAdded:          searchAdded,
 		SearchExisting:       searchExisting,
 
-		RadarrURL:            os.Getenv("RADARR_URL"),
-		RadarrAPIKey:         os.Getenv("RADARR_API_KEY"),
-		RadarrRootFolder:     os.Getenv("RADARR_ROOT_FOLDER"),
-		RadarrQualityProfile: os.Getenv("RADARR_QUALITY_PROFILE"),
+		RadarrURL:            loadStringEnv("RADARR_URL"),
+		RadarrAPIKey:         loadStringEnv("RADARR_API_KEY"),
+		RadarrRootFolder:     loadStringEnv("RADARR_ROOT_FOLDER"),
+		RadarrQualityProfile: loadStringEnv("RADARR_QUALITY_PROFILE"),
 
-		TVCollectionName:    os.Getenv("PLEX_TV_COLLECTION"),
-		MovieCollectionName: os.Getenv("PLEX_MOVIE_COLLECTION"),
+		TVCollectionName:    loadStringEnv("PLEX_TV_COLLECTION"),
+		MovieCollectionName: loadStringEnv("PLEX_MOVIE_COLLECTION"),
 
-		Interval: os.Getenv("INTERVAL"),
+		Interval: loadStringEnv("INTERVAL"),
 	}
 
 	return cfg, cfg.validate()
@@ -93,7 +93,7 @@ func (c *Config) validate() error {
 }
 
 func loadBoolEnv(name string) (bool, error) {
-	value := strings.TrimSpace(os.Getenv(name))
+	value := loadStringEnv(name)
 	if value == "" {
 		return false, nil
 	}
@@ -104,4 +104,8 @@ func loadBoolEnv(name string) (bool, error) {
 	}
 
 	return parsed, nil
+}
+
+func loadStringEnv(name string) string {
+	return trimMatchingQuotes(strings.TrimSpace(os.Getenv(name)))
 }

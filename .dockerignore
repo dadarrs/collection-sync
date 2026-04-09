@@ -1,0 +1,6 @@
+.env
+.git
+.github
+collection-sync
+coverage.*
+*.out
