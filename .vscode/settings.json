@@ -1,0 +1,6 @@
+{
+    "sonarlint.connectedMode.project": {
+        "connectionId": "dadarrs",
+        "projectKey": "dadarrs_collection-sync"
+    }
+}
