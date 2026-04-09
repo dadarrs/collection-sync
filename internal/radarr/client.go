@@ -36,9 +36,21 @@ type MovieMatch struct {
 	MatchedBy string
 }
 
+type radarrAPI interface {
+	AddMovieContext(ctx context.Context, movie *starrradarr.AddMovieInput) (*starrradarr.Movie, error)
+	UpdateMovieContext(ctx context.Context, movieID int64, movie *starrradarr.Movie, moveFiles bool) (*starrradarr.Movie, error)
+	SendCommandContext(ctx context.Context, cmd *starrradarr.CommandRequest) (*starrradarr.CommandResponse, error)
+	GetMovieContext(ctx context.Context, getMovie *starrradarr.GetMovie) ([]*starrradarr.Movie, error)
+	GetMovieByIDContext(ctx context.Context, movieID int64) (*starrradarr.Movie, error)
+	LookupTMDBContext(ctx context.Context, tmdbID int64) (*starrradarr.Movie, error)
+	LookupContext(ctx context.Context, term string) ([]*starrradarr.Movie, error)
+	GetRootFoldersContext(ctx context.Context) ([]*starrradarr.RootFolder, error)
+	GetQualityProfilesContext(ctx context.Context) ([]*starrradarr.QualityProfile, error)
+}
+
 // Client wraps the golift/starr Radarr client.
 type Client struct {
-	api *starrradarr.Radarr
+	api radarrAPI
 }
 
 // New creates a Radarr client for the given server URL and API key.
@@ -97,8 +109,8 @@ func (c *Client) CreateMovie(ctx context.Context, request CreateMovieRequest, de
 	if c == nil || c.api == nil {
 		return nil, errors.New(errRadarrClientNotConfigured)
 	}
-	if request.TMDBID == 0 {
-		return nil, errors.New("tmdb id is required to add a Radarr movie")
+	if request.TMDBID == 0 && strings.TrimSpace(request.Title) == "" {
+		return nil, errors.New("movie title or tmdb id is required to add a Radarr movie")
 	}
 
 	candidate, err := c.lookupMovieCandidate(ctx, request.Title, request.TMDBID)
@@ -134,8 +146,8 @@ func (c *Client) PreviewCreateMovie(ctx context.Context, request CreateMovieRequ
 	if c == nil || c.api == nil {
 		return "", errors.New(errRadarrClientNotConfigured)
 	}
-	if request.TMDBID == 0 {
-		return "", errors.New("tmdb id is required to add a Radarr movie")
+	if request.TMDBID == 0 && strings.TrimSpace(request.Title) == "" {
+		return "", errors.New("movie title or tmdb id is required to add a Radarr movie")
 	}
 
 	candidate, err := c.lookupMovieCandidate(ctx, request.Title, request.TMDBID)

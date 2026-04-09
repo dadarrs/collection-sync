@@ -39,9 +39,20 @@ type SeriesMatch struct {
 	MatchedBy string
 }
 
+type sonarrAPI interface {
+	AddSeriesContext(ctx context.Context, series *starrsonarr.AddSeriesInput) (*starrsonarr.Series, error)
+	UpdateSeriesContext(ctx context.Context, series *starrsonarr.AddSeriesInput, moveFiles bool) (*starrsonarr.Series, error)
+	SendCommandContext(ctx context.Context, cmd *starrsonarr.CommandRequest) (*starrsonarr.CommandResponse, error)
+	GetSeriesContext(ctx context.Context, tvdbID int64) ([]*starrsonarr.Series, error)
+	GetAllSeriesContext(ctx context.Context) ([]*starrsonarr.Series, error)
+	GetSeriesLookupContext(ctx context.Context, term string, tvdbID int64) ([]*starrsonarr.Series, error)
+	GetRootFoldersContext(ctx context.Context) ([]*starrsonarr.RootFolder, error)
+	GetQualityProfilesContext(ctx context.Context) ([]*starrsonarr.QualityProfile, error)
+}
+
 // Client wraps the golift/starr Sonarr client.
 type Client struct {
-	api *starrsonarr.Sonarr
+	api sonarrAPI
 }
 
 // New creates a Sonarr client for the given server URL and API key.

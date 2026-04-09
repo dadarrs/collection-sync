@@ -63,6 +63,31 @@ type RunCmd struct {
 	DryRun bool `help:"Preview sync changes without modifying Sonarr or Radarr."`
 }
 
+type plexService interface {
+	FindCollectionByName(ctx context.Context, name string) (string, error)
+	GetCollectionItems(ctx context.Context, collectionKey string) ([]plex.Item, error)
+}
+
+type sonarrService interface {
+	FindSeries(ctx context.Context, title string, tvdbID int64) (*sonarr.SeriesMatch, error)
+	ResolveAddSeriesDefaults(ctx context.Context, rootFolderSelector, qualityProfileSelector string) (sonarr.AddSeriesDefaults, error)
+	PreviewCreateSeries(ctx context.Context, request sonarr.CreateSeriesRequest, defaults sonarr.AddSeriesDefaults) (string, error)
+	CreateSeries(ctx context.Context, request sonarr.CreateSeriesRequest, defaults sonarr.AddSeriesDefaults) (*starrsonarr.Series, error)
+	PreviewUpdateSeriesMonitoring(series *starrsonarr.Series, request sonarr.CreateSeriesRequest) (bool, error)
+	UpdateSeriesMonitoring(ctx context.Context, series *starrsonarr.Series, request sonarr.CreateSeriesRequest) (*starrsonarr.Series, bool, error)
+	SearchSeason(ctx context.Context, seriesID int64, seasonNumber int) error
+}
+
+type radarrService interface {
+	FindMovie(ctx context.Context, title string, tmdbID int64) (*radarr.MovieMatch, error)
+	ResolveAddMovieDefaults(ctx context.Context, rootFolderSelector, qualityProfileSelector string) (radarr.AddMovieDefaults, error)
+	PreviewCreateMovie(ctx context.Context, request radarr.CreateMovieRequest, defaults radarr.AddMovieDefaults) (string, error)
+	CreateMovie(ctx context.Context, request radarr.CreateMovieRequest, defaults radarr.AddMovieDefaults) (*starrradarr.Movie, error)
+	PreviewUpdateMovieMonitoring(movie *starrradarr.Movie, monitored bool) (bool, error)
+	UpdateMovieMonitoring(ctx context.Context, movie *starrradarr.Movie, monitored bool) (*starrradarr.Movie, bool, error)
+	SearchMovie(ctx context.Context, movieID int64) error
+}
+
 func (c *RunCmd) Run(d *deps) error {
 	tv := d.canSyncTV()
 	movies := d.canSyncMovies()
@@ -76,10 +101,10 @@ func (c *RunCmd) Run(d *deps) error {
 	}
 
 	if c.DryRun {
-		fmt.Println("[dry-run] previewing changes only")
+		d.println("[dry-run] previewing changes only")
 	}
 
-	printSyncTargets(tv, movies)
+	printSyncTargets(d.output(), tv, movies)
 
 	if interval == 0 {
 		return d.syncAll(tv, movies, c.DryRun)
@@ -91,28 +116,32 @@ func (c *RunCmd) Run(d *deps) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	fmt.Printf("interval: %s (next run: %s)\n\n", interval, time.Now().Add(interval).Format(time.DateTime))
+	d.printf("interval: %s (next run: %s)\n\n", interval, time.Now().Add(interval).Format(time.DateTime))
 
 	if err := d.syncAll(tv, movies, c.DryRun); err != nil {
-		fmt.Fprintf(os.Stderr, "sync error: %v\n", err)
+		d.errorf("sync error: %v\n", err)
 	}
 
+	return c.runContinuously(ctx, d, tv, movies, interval, ticker.C)
+}
+
+func (c *RunCmd) runContinuously(ctx context.Context, d *deps, tv, movies bool, interval time.Duration, ticks <-chan time.Time) error {
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("\nshutting down")
+			d.println("\nshutting down")
 			return nil
-		case tick := <-ticker.C:
-			fmt.Printf("\n--- sync started at %s ---\n\n", time.Now().Format(time.DateTime))
+		case tick := <-ticks:
+			d.printf("\n--- sync started at %s ---\n\n", time.Now().Format(time.DateTime))
 			if err := d.syncAll(tv, movies, c.DryRun); err != nil {
-				fmt.Fprintf(os.Stderr, "sync error: %v\n", err)
+				d.errorf("sync error: %v\n", err)
 			}
-			fmt.Printf("\nnext run: %s\n", tick.Add(interval).Format(time.DateTime))
+			d.printf("\nnext run: %s\n", tick.Add(interval).Format(time.DateTime))
 		}
 	}
 }
 
-func printSyncTargets(tv, movies bool) {
+func printSyncTargets(w io.Writer, tv, movies bool) {
 	var targets []string
 	if tv {
 		targets = append(targets, "tv")
@@ -120,7 +149,7 @@ func printSyncTargets(tv, movies bool) {
 	if movies {
 		targets = append(targets, "movies")
 	}
-	fmt.Printf("sync targets: %s\n", strings.Join(targets, ", "))
+	_, _ = fmt.Fprintf(w, "sync targets: %s\n", strings.Join(targets, ", "))
 }
 
 func (d *deps) canSyncTV() bool {
@@ -135,21 +164,21 @@ func (d *deps) syncAll(tv, movies, dryRun bool) error {
 	var tvErr, movieErr error
 
 	if tv {
-		fmt.Println("=== TV Sync ===")
+		d.println("=== TV Sync ===")
 		cmd := &SyncTVCmd{DryRun: dryRun}
 		if err := cmd.Run(d); err != nil {
 			tvErr = fmt.Errorf("tv sync: %w", err)
 		}
-		fmt.Println()
+		d.println()
 	}
 
 	if movies {
-		fmt.Println("=== Movie Sync ===")
+		d.println("=== Movie Sync ===")
 		cmd := &SyncMoviesCmd{DryRun: dryRun}
 		if err := cmd.Run(d); err != nil {
 			movieErr = fmt.Errorf("movie sync: %w", err)
 		}
-		fmt.Println()
+		d.println()
 	}
 
 	return errors.Join(tvErr, movieErr)
@@ -168,7 +197,7 @@ func (c *ListMoviesCmd) Run(d *deps) error {
 		return err
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
 	if err := writef(w, "#\tTITLE\tTMDB\tTVDB\tRATING KEY\n"); err != nil {
 		return err
 	}
@@ -180,7 +209,7 @@ func (c *ListMoviesCmd) Run(d *deps) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf(totalMoviesFormat, len(items))
+	d.printf(totalMoviesFormat, len(items))
 	return nil
 }
 
@@ -197,7 +226,7 @@ func (c *ListTVCmd) Run(d *deps) error {
 		return err
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
 	if err := writef(w, "#\tSHOW\tSEASON\tTYPE\tTMDB\tTVDB\tRATING KEY\n"); err != nil {
 		return err
 	}
@@ -219,7 +248,7 @@ func (c *ListTVCmd) Run(d *deps) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf("\nTotal: %d items\n", len(items))
+	d.printf("\nTotal: %d items\n", len(items))
 	return nil
 }
 
@@ -251,7 +280,7 @@ func (c *CheckMoviesCmd) Run(d *deps) error {
 	lookupCache := make(map[string]cachedMovieLookup)
 	statusCounts := make(map[string]int)
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
 	if err := writef(w, "#\tTITLE\tSTATUS\tMATCH\tDETAIL\n"); err != nil {
 		return err
 	}
@@ -270,8 +299,8 @@ func (c *CheckMoviesCmd) Run(d *deps) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf(totalMoviesFormat, len(items))
-	printMovieCheckSummary(statusCounts)
+	d.printf(totalMoviesFormat, len(items))
+	printMovieCheckSummary(d.output(), statusCounts)
 	return nil
 }
 
@@ -289,7 +318,7 @@ func (c *CheckTVCmd) Run(d *deps) error {
 	lookupCache := make(map[string]cachedLookup)
 	statusCounts := make(map[string]int)
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
 	if err := writef(w, "#\tSHOW\tSEASON\tSTATUS\tMATCH\tDETAIL\n"); err != nil {
 		return err
 	}
@@ -310,8 +339,8 @@ func (c *CheckTVCmd) Run(d *deps) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf("\nTotal: %d items\n", len(items))
-	printTVCheckSummary(statusCounts)
+	d.printf("\nTotal: %d items\n", len(items))
+	printTVCheckSummary(d.output(), statusCounts)
 	return nil
 }
 
@@ -337,7 +366,7 @@ func (c *SyncTVCmd) Run(d *deps) error {
 	defaultsResolved := false
 	var errs []error
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
 	if err := writef(w, "#\tSHOW\tTVDB\tMONITOR\tSTATUS\tDETAIL\n"); err != nil {
 		return err
 	}
@@ -352,8 +381,8 @@ func (c *SyncTVCmd) Run(d *deps) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf("\nTotal: %d shows\n", len(targets))
-	printTVSyncSummary(statusCounts)
+	d.printf("\nTotal: %d shows\n", len(targets))
+	printTVSyncSummary(d.output(), statusCounts)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -382,7 +411,7 @@ func (c *SyncMoviesCmd) Run(d *deps) error {
 	defaultsResolved := false
 	var errs []error
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
 	if err := writef(w, "#\tTITLE\tTMDB\tSTATUS\tDETAIL\n"); err != nil {
 		return err
 	}
@@ -397,8 +426,8 @@ func (c *SyncMoviesCmd) Run(d *deps) error {
 	if err := w.Flush(); err != nil {
 		return err
 	}
-	fmt.Printf(totalMoviesFormat, len(targets))
-	printMovieSyncSummary(statusCounts)
+	d.printf(totalMoviesFormat, len(targets))
+	printMovieSyncSummary(d.output(), statusCounts)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -430,9 +459,37 @@ type tvSyncTarget struct {
 // deps holds shared dependencies injected via kong.Bind.
 type deps struct {
 	cfg    *config.Config
-	plex   *plex.Client
-	radarr *radarr.Client
-	sonarr *sonarr.Client
+	plex   plexService
+	radarr radarrService
+	sonarr sonarrService
+	out    io.Writer
+	errOut io.Writer
+}
+
+func (d *deps) output() io.Writer {
+	if d != nil && d.out != nil {
+		return d.out
+	}
+	return os.Stdout
+}
+
+func (d *deps) errorOutput() io.Writer {
+	if d != nil && d.errOut != nil {
+		return d.errOut
+	}
+	return os.Stderr
+}
+
+func (d *deps) println(args ...any) {
+	_, _ = fmt.Fprintln(d.output(), args...)
+}
+
+func (d *deps) printf(format string, args ...any) {
+	_, _ = fmt.Fprintf(d.output(), format, args...)
+}
+
+func (d *deps) errorf(format string, args ...any) {
+	_, _ = fmt.Fprintf(d.errorOutput(), format, args...)
 }
 
 func (d *deps) processTVSyncTarget(ctx context.Context, lookupCache map[string]cachedLookup, target tvSyncTarget, defaults *sonarr.AddSeriesDefaults, defaultsResolved *bool, dryRun bool) (string, string, error) {
@@ -824,34 +881,34 @@ func evaluateSeasonCheck(item plex.Item, match *sonarr.SeriesMatch) (string, str
 	return statusPresent, match.MatchedBy, fmt.Sprintf("season %d is monitored", item.Index)
 }
 
-func printTVCheckSummary(statusCounts map[string]int) {
+func printTVCheckSummary(w io.Writer, statusCounts map[string]int) {
 	for _, status := range []string{statusPresent, statusMissingSeries, statusMissingSeason, statusUnmonitored} {
 		if count := statusCounts[status]; count > 0 {
-			fmt.Printf(statusCountFormat, status, count)
+			_, _ = fmt.Fprintf(w, statusCountFormat, status, count)
 		}
 	}
 }
 
-func printTVSyncSummary(statusCounts map[string]int) {
+func printTVSyncSummary(w io.Writer, statusCounts map[string]int) {
 	for _, status := range []string{statusAdded, statusUpdated, statusWouldAdd, statusWouldUpdate, statusExisting, statusSkipped, statusFailed} {
 		if count := statusCounts[status]; count > 0 {
-			fmt.Printf(statusCountFormat, status, count)
+			_, _ = fmt.Fprintf(w, statusCountFormat, status, count)
 		}
 	}
 }
 
-func printMovieSyncSummary(statusCounts map[string]int) {
+func printMovieSyncSummary(w io.Writer, statusCounts map[string]int) {
 	for _, status := range []string{statusAdded, statusUpdated, statusWouldAdd, statusWouldUpdate, statusExisting, statusSkipped, statusFailed} {
 		if count := statusCounts[status]; count > 0 {
-			fmt.Printf(statusCountFormat, status, count)
+			_, _ = fmt.Fprintf(w, statusCountFormat, status, count)
 		}
 	}
 }
 
-func printMovieCheckSummary(statusCounts map[string]int) {
+func printMovieCheckSummary(w io.Writer, statusCounts map[string]int) {
 	for _, status := range []string{statusPresent, statusMissingMovie, statusUnmonitored} {
 		if count := statusCounts[status]; count > 0 {
-			fmt.Printf(statusCountFormat, status, count)
+			_, _ = fmt.Fprintf(w, statusCountFormat, status, count)
 		}
 	}
 }
@@ -909,19 +966,25 @@ func buildTVSyncTargets(items []plex.Item) []tvSyncTarget {
 
 func buildMovieSyncTargets(items []plex.Item) []movieSyncTarget {
 	targetMap := make(map[string]*movieSyncTarget)
+	targetsByTitle := make(map[string]*movieSyncTarget)
 	for _, item := range items {
-		lookupKey := radarrLookupKey(item.Title, item.TMDBID)
-		target, ok := targetMap[lookupKey]
-		if !ok {
-			target = &movieSyncTarget{
-				Title:  item.Title,
-				TMDBID: item.TMDBID,
+		titleKey := radarrLookupKey(item.Title, 0)
+		if target, ok := targetsByTitle[titleKey]; ok {
+			if target.TMDBID == 0 && item.TMDBID != 0 {
+				delete(targetMap, titleKey)
+				target.TMDBID = item.TMDBID
+				targetMap[radarrLookupKey(item.Title, item.TMDBID)] = target
 			}
-			targetMap[lookupKey] = target
+			continue
 		}
-		if target.TMDBID == 0 && item.TMDBID != 0 {
-			target.TMDBID = item.TMDBID
+
+		lookupKey := radarrLookupKey(item.Title, item.TMDBID)
+		target := &movieSyncTarget{
+			Title:  item.Title,
+			TMDBID: item.TMDBID,
 		}
+		targetMap[lookupKey] = target
+		targetsByTitle[titleKey] = target
 	}
 
 	targets := make([]movieSyncTarget, 0, len(targetMap))
