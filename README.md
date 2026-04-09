@@ -45,6 +45,9 @@ Use the Makefile for common local workflows:
 ```bash
 make build
 make test
+make test-cover
+make test-cover-html
+make test-cover-check
 make lint
 make run ARGS='tv list'
 make docker-build

@@ -34,11 +34,23 @@ type Item struct {
 type Client struct {
 	serverURL string
 	token     string
+	doer      httpDoer
+}
+
+type httpDoer interface {
+	Do(*http.Request) (*http.Response, error)
 }
 
 // New creates a Plex client targeting the given server URL with the provided token.
 func New(serverURL, token string) *Client {
-	return &Client{serverURL: strings.TrimRight(serverURL, "/"), token: token}
+	return &Client{serverURL: strings.TrimRight(serverURL, "/"), token: token, doer: http.DefaultClient}
+}
+
+func (c *Client) doerOrDefault() httpDoer {
+	if c != nil && c.doer != nil {
+		return c.doer
+	}
+	return http.DefaultClient
 }
 
 // section is a minimal representation of a Plex library section used for
@@ -79,7 +91,7 @@ func (c *Client) listSections(ctx context.Context) ([]section, error) {
 	}
 	setHeaders(req, c.token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doerOrDefault().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +134,7 @@ func (c *Client) FindCollectionByName(ctx context.Context, name string) (string,
 		}
 		setHeaders(req, c.token)
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := c.doerOrDefault().Do(req)
 		if err != nil {
 			slog.Warn("listing collections for section failed", "section", sec.Key, "error", err)
 			continue
@@ -220,7 +232,7 @@ func (c *Client) getExternalIDs(ctx context.Context, ratingKey string) (tvdb, tm
 	}
 	setHeaders(req, c.token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doerOrDefault().Do(req)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -251,7 +263,7 @@ func (c *Client) GetCollectionItems(ctx context.Context, collectionKey string) (
 	}
 	setHeaders(req, c.token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doerOrDefault().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching collection items: %w", err)
 	}
