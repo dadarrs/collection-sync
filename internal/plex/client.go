@@ -128,6 +128,12 @@ func (c *Client) FindCollectionByName(ctx context.Context, name string) (string,
 			continue
 		}
 
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			slog.Warn("listing collections for section returned unexpected status", "section", sec.Key, "status", resp.StatusCode)
+			continue
+		}
+
 		var body collectionsResponse
 		err = json.NewDecoder(resp.Body).Decode(&body)
 		if closeErr := resp.Body.Close(); closeErr != nil {
