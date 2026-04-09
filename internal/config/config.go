@@ -27,6 +27,8 @@ type Config struct {
 
 	TVCollectionName    string
 	MovieCollectionName string
+
+	Interval string
 }
 
 // Load reads configuration from environment variables and validates all required values.
@@ -64,6 +66,8 @@ func Load() (*Config, error) {
 
 		TVCollectionName:    os.Getenv("PLEX_TV_COLLECTION"),
 		MovieCollectionName: os.Getenv("PLEX_MOVIE_COLLECTION"),
+
+		Interval: os.Getenv("INTERVAL"),
 	}
 
 	return cfg, cfg.validate()

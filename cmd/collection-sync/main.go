@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/dadarrs/collection-sync/internal/config"
@@ -37,6 +40,7 @@ const (
 )
 
 type CLI struct {
+	Run    RunCmd    `cmd:"" help:"Sync TV and movie collections. Repeats on INTERVAL if set."`
 	TV     TVCmd     `cmd:"" help:"TV show and season operations."`
 	Movies MoviesCmd `cmd:"" help:"Movie operations."`
 }
@@ -51,6 +55,102 @@ type MoviesCmd struct {
 	List  ListMoviesCmd  `cmd:"" help:"List movies in the movie collection."`
 	Check CheckMoviesCmd `cmd:"" help:"Check movies from Plex against Radarr."`
 	Sync  SyncMoviesCmd  `cmd:"" help:"Add missing movies from Plex into Radarr."`
+}
+
+type RunCmd struct {
+	DryRun bool `help:"Preview sync changes without modifying Sonarr or Radarr."`
+}
+
+func (c *RunCmd) Run(d *deps) error {
+	tv := d.canSyncTV()
+	movies := d.canSyncMovies()
+	if !tv && !movies {
+		return fmt.Errorf("nothing to sync: set PLEX_TV_COLLECTION + SONARR_URL + SONARR_API_KEY for TV, or PLEX_MOVIE_COLLECTION + RADARR_URL + RADARR_API_KEY for movies")
+	}
+
+	interval, err := config.ParseHumanDuration(d.cfg.Interval)
+	if err != nil {
+		return err
+	}
+
+	if c.DryRun {
+		fmt.Println("[dry-run] previewing changes only")
+	}
+
+	printSyncTargets(tv, movies)
+
+	if interval == 0 {
+		return d.syncAll(tv, movies, c.DryRun)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	fmt.Printf("interval: %s (next run: %s)\n\n", interval, time.Now().Add(interval).Format(time.DateTime))
+
+	if err := d.syncAll(tv, movies, c.DryRun); err != nil {
+		fmt.Fprintf(os.Stderr, "sync error: %v\n", err)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nshutting down")
+			return nil
+		case tick := <-ticker.C:
+			fmt.Printf("\n--- sync started at %s ---\n\n", time.Now().Format(time.DateTime))
+			if err := d.syncAll(tv, movies, c.DryRun); err != nil {
+				fmt.Fprintf(os.Stderr, "sync error: %v\n", err)
+			}
+			fmt.Printf("\nnext run: %s\n", tick.Add(interval).Format(time.DateTime))
+		}
+	}
+}
+
+func printSyncTargets(tv, movies bool) {
+	var targets []string
+	if tv {
+		targets = append(targets, "tv")
+	}
+	if movies {
+		targets = append(targets, "movies")
+	}
+	fmt.Printf("sync targets: %s\n", strings.Join(targets, ", "))
+}
+
+func (d *deps) canSyncTV() bool {
+	return d.cfg.TVCollectionName != "" && d.cfg.SonarrURL != "" && d.cfg.SonarrAPIKey != ""
+}
+
+func (d *deps) canSyncMovies() bool {
+	return d.cfg.MovieCollectionName != "" && d.cfg.RadarrURL != "" && d.cfg.RadarrAPIKey != ""
+}
+
+func (d *deps) syncAll(tv, movies, dryRun bool) error {
+	var tvErr, movieErr error
+
+	if tv {
+		fmt.Println("=== TV Sync ===")
+		cmd := &SyncTVCmd{DryRun: dryRun}
+		if err := cmd.Run(d); err != nil {
+			tvErr = fmt.Errorf("tv sync: %w", err)
+		}
+		fmt.Println()
+	}
+
+	if movies {
+		fmt.Println("=== Movie Sync ===")
+		cmd := &SyncMoviesCmd{DryRun: dryRun}
+		if err := cmd.Run(d); err != nil {
+			movieErr = fmt.Errorf("movie sync: %w", err)
+		}
+		fmt.Println()
+	}
+
+	return errors.Join(tvErr, movieErr)
 }
 
 type ListMoviesCmd struct{}
