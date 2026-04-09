@@ -44,13 +44,20 @@ Run with Docker:
 
 ```bash
 docker build -t collection-sync .
-docker run --rm --env-file .env collection-sync movies sync --dry-run
+docker run --rm --env-file .env collection-sync
+```
+
+The Docker image defaults to the `run` command. Pass arguments to override:
+
+```bash
+docker run --rm --env-file .env collection-sync movies list
 ```
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
+| `run [--dry-run]` | Sync both TV and movie collections in one command. Skips whichever lacks API config. Repeats on `INTERVAL` if set. |
 | `tv list` | List shows and seasons in `PLEX_TV_COLLECTION`. |
 | `tv check` | Compare the TV collection against Sonarr and report status per item. |
 | `tv sync [number] [--dry-run]` | Add missing TV items to Sonarr or update monitoring for existing matches. Pass `number` to sync a single row from `tv list`. |
@@ -80,5 +87,6 @@ Copy `.env.example` to `.env` and set the variables below.
 | `RADARR_QUALITY_PROFILE` | `movies sync` | Optional. If unset, the app uses the only available Radarr quality profile. |
 | `SEARCH_ADDED` | `sync` commands | Optional. When `true`, queue a Sonarr or Radarr search after content is added or newly enabled for monitoring. |
 | `SEARCH_EXISTING` | `sync` commands | Optional. When `true`, queue a Sonarr or Radarr search even when the requested item already exists. |
+| `INTERVAL` | `run` | Optional. Repeat the sync on this interval, for example `10m`, `1h`, `6h`, `3d`. If unset, `run` syncs once and exits. |
 
 Reliable matching depends on Plex metadata exposing TVDB IDs for TV items and TMDB IDs for movies.
