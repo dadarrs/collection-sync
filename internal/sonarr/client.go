@@ -334,7 +334,7 @@ func buildUpdateSeriesInput(series *starrsonarr.Series, request CreateSeriesRequ
 
 func buildMonitoredSeasons(candidateSeasons []*starrsonarr.Season, monitoredSeasons []int) ([]*starrsonarr.Season, error) {
 	if len(candidateSeasons) == 0 {
-		return nil, errors.New("Sonarr lookup returned no seasons")
+		return nil, errors.New("sonarr lookup returned no seasons")
 	}
 
 	selected := make(map[int]struct{}, len(monitoredSeasons))
@@ -366,7 +366,7 @@ func buildMonitoredSeasons(candidateSeasons []*starrsonarr.Season, monitoredSeas
 	}
 	if len(missing) > 0 {
 		sort.Ints(missing)
-		return nil, fmt.Errorf("Sonarr lookup did not include requested seasons %s", joinSeasonNumbers(missing))
+		return nil, fmt.Errorf("sonarr lookup did not include requested seasons %s", joinSeasonNumbers(missing))
 	}
 
 	return seasons, nil
@@ -374,7 +374,7 @@ func buildMonitoredSeasons(candidateSeasons []*starrsonarr.Season, monitoredSeas
 
 func buildUpdatedSeasons(existingSeasons []*starrsonarr.Season, request CreateSeriesRequest) ([]*starrsonarr.Season, bool, error) {
 	if len(existingSeasons) == 0 {
-		return nil, false, errors.New("Sonarr series has no seasons to update")
+		return nil, false, errors.New("sonarr series has no seasons to update")
 	}
 
 	selected := make(map[int]struct{}, len(request.MonitoredSeasons))
@@ -415,7 +415,7 @@ func buildUpdatedSeasons(existingSeasons []*starrsonarr.Season, request CreateSe
 	}
 	if len(missing) > 0 {
 		sort.Ints(missing)
-		return nil, false, fmt.Errorf("Sonarr series did not include requested seasons %s", joinSeasonNumbers(missing))
+		return nil, false, fmt.Errorf("sonarr series did not include requested seasons %s", joinSeasonNumbers(missing))
 	}
 
 	return seasons, changed, nil
@@ -449,7 +449,7 @@ func (c *Client) resolveRootFolder(ctx context.Context, selector string) (*starr
 		return rootFolder, nil
 	}
 
-	return nil, fmt.Errorf("Sonarr root folder %q not found; available options: %s", selector, joinRootFolderPaths(accessible))
+	return nil, fmt.Errorf("sonarr root folder %q not found; available options: %s", selector, joinRootFolderPaths(accessible))
 }
 
 func (c *Client) resolveQualityProfile(ctx context.Context, selector string) (*starrsonarr.QualityProfile, error) {
@@ -473,7 +473,7 @@ func (c *Client) resolveQualityProfile(ctx context.Context, selector string) (*s
 		return profile, nil
 	}
 
-	return nil, fmt.Errorf("Sonarr quality profile %q not found; available options: %s", selector, joinQualityProfileNames(profiles))
+	return nil, fmt.Errorf("sonarr quality profile %q not found; available options: %s", selector, joinQualityProfileNames(profiles))
 }
 
 // FindSeason returns the season metadata for the requested season number.

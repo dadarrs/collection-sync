@@ -40,6 +40,23 @@ go build -o collection-sync ./cmd/collection-sync
 ./collection-sync movies sync --dry-run
 ```
 
+Use the Makefile for common local workflows:
+
+```bash
+make build
+make test
+make lint
+make run ARGS='tv list'
+make docker-build
+make docker-run ARGS='movies list'
+```
+
+If `golangci-lint` is not installed locally, run:
+
+```bash
+make lint-install
+```
+
 Run with Docker:
 
 ```bash
