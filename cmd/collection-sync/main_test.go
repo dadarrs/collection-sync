@@ -126,10 +126,32 @@ func TestBuildTVSyncTargets(t *testing.T) {
 }
 
 func TestBuildMovieSyncTargets(t *testing.T) {
-	movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: "Movie B", TMDBID: 0}, {Title: "Movie A", TMDBID: 1}, {Title: "Movie B", TMDBID: 2}})
-	if len(movieTargets) != 2 || movieTargets[0].Title != "Movie A" || movieTargets[1].TMDBID != 2 {
-		t.Fatalf("buildMovieSyncTargets() = %+v", movieTargets)
-	}
+	t.Run("upgrades unknown title to sole tmdb id", func(t *testing.T) {
+		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: "Movie B", TMDBID: 0}, {Title: "Movie A", TMDBID: 1}, {Title: "Movie B", TMDBID: 2}})
+		if len(movieTargets) != 2 || movieTargets[0].Title != "Movie A" || movieTargets[0].TMDBID != 1 || movieTargets[1].Title != "Movie B" || movieTargets[1].TMDBID != 2 {
+			t.Fatalf("buildMovieSyncTargets() = %+v", movieTargets)
+		}
+	})
+
+	t.Run("preserves distinct remakes with same title", func(t *testing.T) {
+		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: "Dune", TMDBID: 438631}, {Title: "Dune", TMDBID: 841}, {Title: "Dune", TMDBID: 438631}})
+		if len(movieTargets) != 2 {
+			t.Fatalf("len(buildMovieSyncTargets()) = %d, want 2 (%+v)", len(movieTargets), movieTargets)
+		}
+		if movieTargets[0].Title != "Dune" || movieTargets[0].TMDBID != 841 || movieTargets[1].Title != "Dune" || movieTargets[1].TMDBID != 438631 {
+			t.Fatalf("buildMovieSyncTargets() = %+v", movieTargets)
+		}
+	})
+
+	t.Run("keeps unknown title separate when multiple tmdb ids exist", func(t *testing.T) {
+		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: "King Kong", TMDBID: 0}, {Title: "King Kong", TMDBID: 9072}, {Title: "King Kong", TMDBID: 254}})
+		if len(movieTargets) != 3 {
+			t.Fatalf("len(buildMovieSyncTargets()) = %d, want 3 (%+v)", len(movieTargets), movieTargets)
+		}
+		if movieTargets[0].TMDBID != 0 || movieTargets[1].TMDBID != 254 || movieTargets[2].TMDBID != 9072 {
+			t.Fatalf("buildMovieSyncTargets() = %+v", movieTargets)
+		}
+	})
 }
 
 func TestSelectSyncItems(t *testing.T) {

@@ -12,7 +12,16 @@ if [ ! -f "$COVERAGE_FILE" ]; then
 fi
 
 extract_total() {
-	go tool cover -func="$1" | awk '/^total:/ {gsub("%", "", $3); print $3}'
+	if ! cover_output=$(go tool cover -func="$1"); then
+		echo "failed to read coverage profile: $1" >&2
+		exit 1
+	fi
+	total=$(printf '%s\n' "$cover_output" | awk '/^total:/ {gsub("%", "", $3); print $3}')
+	if [ -z "$total" ]; then
+		echo "failed to extract total coverage from: $1" >&2
+		exit 1
+	fi
+	printf '%s\n' "$total"
 }
 
 check_threshold() {
@@ -29,12 +38,24 @@ check_threshold() {
 overall=$(extract_total "$COVERAGE_FILE")
 check_threshold "overall" "$overall" "$OVERALL_MIN"
 
+tmp=
+cleanup() {
+	if [ -n "$tmp" ]; then
+		rm -f "$tmp"
+	fi
+}
+
+trap cleanup EXIT HUP INT TERM
+
 for spec in $PACKAGE_THRESHOLDS; do
 	package=${spec%:*}
 	minimum=${spec#*:}
-	tmp=$(mktemp)
+	tmp=$(mktemp "${TMPDIR:-/tmp}/coverage-check.XXXXXX")
 	go test -covermode=atomic -coverprofile="$tmp" "$package" >/dev/null
 	actual=$(extract_total "$tmp")
 	rm -f "$tmp"
+	tmp=
 	check_threshold "$package" "$actual" "$minimum"
 done
+
+trap - EXIT HUP INT TERM

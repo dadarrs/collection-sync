@@ -965,31 +965,49 @@ func buildTVSyncTargets(items []plex.Item) []tvSyncTarget {
 }
 
 func buildMovieSyncTargets(items []plex.Item) []movieSyncTarget {
-	targetMap := make(map[string]*movieSyncTarget)
-	targetsByTitle := make(map[string]*movieSyncTarget)
+	type movieTargetGroup struct {
+		title      string
+		hasUnknown bool
+		tmdbIDs    map[int64]struct{}
+	}
+
+	groups := make(map[string]*movieTargetGroup)
 	for _, item := range items {
 		titleKey := radarrLookupKey(item.Title, 0)
-		if target, ok := targetsByTitle[titleKey]; ok {
-			if target.TMDBID == 0 && item.TMDBID != 0 {
-				delete(targetMap, titleKey)
-				target.TMDBID = item.TMDBID
-				targetMap[radarrLookupKey(item.Title, item.TMDBID)] = target
+		group, ok := groups[titleKey]
+		if !ok {
+			group = &movieTargetGroup{
+				title:   item.Title,
+				tmdbIDs: make(map[int64]struct{}),
 			}
+			groups[titleKey] = group
+		}
+
+		if item.TMDBID > 0 {
+			group.tmdbIDs[item.TMDBID] = struct{}{}
 			continue
 		}
 
-		lookupKey := radarrLookupKey(item.Title, item.TMDBID)
-		target := &movieSyncTarget{
-			Title:  item.Title,
-			TMDBID: item.TMDBID,
-		}
-		targetMap[lookupKey] = target
-		targetsByTitle[titleKey] = target
+		group.hasUnknown = true
 	}
 
-	targets := make([]movieSyncTarget, 0, len(targetMap))
-	for _, target := range targetMap {
-		targets = append(targets, *target)
+	targets := make([]movieSyncTarget, 0, len(items))
+	for _, group := range groups {
+		switch len(group.tmdbIDs) {
+		case 0:
+			targets = append(targets, movieSyncTarget{Title: group.title})
+		case 1:
+			for tmdbID := range group.tmdbIDs {
+				targets = append(targets, movieSyncTarget{Title: group.title, TMDBID: tmdbID})
+			}
+		default:
+			if group.hasUnknown {
+				targets = append(targets, movieSyncTarget{Title: group.title})
+			}
+			for tmdbID := range group.tmdbIDs {
+				targets = append(targets, movieSyncTarget{Title: group.title, TMDBID: tmdbID})
+			}
+		}
 	}
 	sort.Slice(targets, func(i, j int) bool {
 		if targets[i].Title == targets[j].Title {
