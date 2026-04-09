@@ -106,9 +106,7 @@ func TestLoad(t *testing.T) {
 				writeFile(t, filepath.Join(".env"), tt.dotEnv)
 			}
 			for key, value := range tt.env {
-				if err := os.Setenv(key, value); err != nil {
-					t.Fatalf("Setenv(%q) error = %v", key, err)
-				}
+				t.Setenv(key, value)
 			}
 
 			cfg, err := Load()
@@ -175,9 +173,7 @@ func TestLoadDotEnv(t *testing.T) {
 
 	t.Run("ignores malformed comments and blanks and keeps existing env", func(t *testing.T) {
 		resetConfigEnvForTest(t)
-		if err := os.Setenv("PLEX_URL", "http://runtime"); err != nil {
-			t.Fatalf("Setenv() error = %v", err)
-		}
+		t.Setenv("PLEX_URL", "http://runtime")
 
 		path := filepath.Join(t.TempDir(), ".env")
 		writeFile(t, path, strings.Join([]string{
@@ -305,51 +301,20 @@ func TestParseHumanDuration(t *testing.T) {
 
 func resetConfigEnvForTest(t *testing.T) {
 	t.Helper()
-	original := make(map[string]struct {
-		value string
-		ok    bool
-	}, len(configEnvNames))
 	for _, name := range configEnvNames {
-		value, ok := os.LookupEnv(name)
-		original[name] = struct {
-			value string
-			ok    bool
-		}{value: value, ok: ok}
+		if value, ok := os.LookupEnv(name); ok {
+			t.Setenv(name, value)
+		}
 		if err := os.Unsetenv(name); err != nil {
 			t.Fatalf("Unsetenv(%q) error = %v", name, err)
 		}
 	}
-	t.Cleanup(func() {
-		for _, name := range configEnvNames {
-			state := original[name]
-			var err error
-			if state.ok {
-				err = os.Setenv(name, state.value)
-			} else {
-				err = os.Unsetenv(name)
-			}
-			if err != nil {
-				panic(err)
-			}
-		}
-	})
 }
 
 func useTempWorkingDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd() error = %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("Chdir(%q) error = %v", dir, err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(wd); err != nil {
-			panic(err)
-		}
-	})
+	t.Chdir(dir)
 	return dir
 }
 

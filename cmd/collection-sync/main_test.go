@@ -664,7 +664,7 @@ func TestCheckMoviesAndMovieUpdateBranches(t *testing.T) {
 		d.cfg.SearchExisting = true
 		d.radarr = fakeRadarrService{
 			previewUpdateMovieMonitoring: func(*starrradarr.Movie, bool) (bool, error) { return false, nil },
-			updateMovieMonitoring: func(_ context.Context, movie *starrradarr.Movie, monitored bool) (*starrradarr.Movie, bool, error) {
+			updateMovieMonitoring: func(_ context.Context, movie *starrradarr.Movie, _ bool) (*starrradarr.Movie, bool, error) {
 				return movie, false, nil
 			},
 			searchMovie: func(context.Context, int64) error {
