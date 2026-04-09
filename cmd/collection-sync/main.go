@@ -83,29 +83,29 @@ func (c *RunCmd) Run(d *deps) error {
 		return d.syncAll(tv, movies, c.DryRun)
 	}
 
-	fmt.Printf("interval: %s (next run: %s)\n\n", interval, time.Now().Add(interval).Format(time.DateTime))
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	fmt.Printf("interval: %s (next run: %s)\n\n", interval, time.Now().Add(interval).Format(time.DateTime))
 
 	if err := d.syncAll(tv, movies, c.DryRun); err != nil {
 		fmt.Fprintf(os.Stderr, "sync error: %v\n", err)
 	}
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
 	for {
-		fmt.Printf("\nnext run: %s\n", time.Now().Add(interval).Format(time.DateTime))
 		select {
 		case <-ctx.Done():
 			fmt.Println("\nshutting down")
 			return nil
-		case <-ticker.C:
+		case tick := <-ticker.C:
 			fmt.Printf("\n--- sync started at %s ---\n\n", time.Now().Format(time.DateTime))
 			if err := d.syncAll(tv, movies, c.DryRun); err != nil {
 				fmt.Fprintf(os.Stderr, "sync error: %v\n", err)
 			}
+			fmt.Printf("\nnext run: %s\n", tick.Add(interval).Format(time.DateTime))
 		}
 	}
 }

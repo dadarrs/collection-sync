@@ -34,6 +34,10 @@ func ParseHumanDuration(s string) (time.Duration, error) {
 			if days <= 0 {
 				return 0, fmt.Errorf("invalid interval %q: must be positive", s)
 			}
+			maxDays := int64(time.Duration(1<<63-1) / (24 * time.Hour))
+			if int64(days) > maxDays {
+				return 0, fmt.Errorf("invalid interval %q: exceeds maximum supported duration", s)
+			}
 			return time.Duration(days) * 24 * time.Hour, nil
 		}
 	}
