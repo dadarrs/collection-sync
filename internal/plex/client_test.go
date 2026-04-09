@@ -9,10 +9,16 @@ import (
 	"testing"
 )
 
+const (
+	testPlexServerURL   = "http://plex"
+	invalidJSONTestName = "invalid json"
+	testCollectionKey   = "collection-1"
+)
+
 func TestNewTrimsTrailingSlash(t *testing.T) {
-	client := New("http://plex/", "token")
-	if client.serverURL != "http://plex" {
-		t.Fatalf("serverURL = %q, want %q", client.serverURL, "http://plex")
+	client := New(testPlexServerURL+"/", "token")
+	if client.serverURL != testPlexServerURL {
+		t.Fatalf("serverURL = %q, want %q", client.serverURL, testPlexServerURL)
 	}
 }
 
@@ -62,7 +68,7 @@ func TestExtractIDs(t *testing.T) {
 }
 
 func TestSetHeaders(t *testing.T) {
-	req, err := http.NewRequest(http.MethodGet, "http://plex", nil)
+	req, err := http.NewRequest(http.MethodGet, testPlexServerURL, nil)
 	if err != nil {
 		t.Fatalf("NewRequest() error = %v", err)
 	}
@@ -206,7 +212,7 @@ func TestListSections(t *testing.T) {
 	}{
 		{name: "success", statusCode: http.StatusOK, body: `{"MediaContainer":{"Directory":[{"key":"1","title":"TV","type":"show"}]}}`, wantCount: 1},
 		{name: "non-200", statusCode: http.StatusBadGateway, body: `oops`, wantErr: true},
-		{name: "invalid json", statusCode: http.StatusOK, body: `{`, wantErr: true},
+		{name: invalidJSONTestName, statusCode: http.StatusOK, body: `{`, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -295,7 +301,7 @@ func TestGetExternalIDs(t *testing.T) {
 		{name: "metadata found", statusCode: http.StatusOK, body: `{"MediaContainer":{"Metadata":[{"Guid":[{"id":"tvdb://10"},{"id":"tmdb://20"}]}]}}`, wantTVDB: 10, wantTMDB: 20},
 		{name: "empty metadata", statusCode: http.StatusOK, body: `{"MediaContainer":{"Metadata":[]}}`},
 		{name: "non-200", statusCode: http.StatusBadGateway, body: `oops`, wantErr: true},
-		{name: "invalid json", statusCode: http.StatusOK, body: `{`, wantErr: true},
+		{name: invalidJSONTestName, statusCode: http.StatusOK, body: `{`, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -324,71 +330,69 @@ func TestGetExternalIDs(t *testing.T) {
 	}
 }
 
-func TestGetCollectionItems(t *testing.T) {
-	t.Run("parses mixed items with fallback metadata", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/library/collections/collection-1/items":
-				_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[
-					{"ratingKey":"movie-1","title":"Movie One","type":"movie","Guid":[{"id":"tmdb://101"}]},
-					{"ratingKey":"show-1","title":"Show One","type":"show","Guid":[{"id":"tvdb://202"}]},
-					{"ratingKey":"season-1","title":"Season 1","type":"season","parentTitle":"Show One","parentRatingKey":"show-parent","index":1}
-				]}}`))
-			case "/library/metadata/season-1":
-				_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[{"Guid":[{"id":"tvdb://303"},{"id":"tmdb://404"}]}]}}`))
-			case "/library/metadata/show-parent":
-				_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[{"Guid":[{"id":"tvdb://505"},{"id":"tmdb://606"}]}]}}`))
-			default:
-				http.NotFound(w, r)
-			}
-		}))
-		defer server.Close()
+func TestGetCollectionItemsParsesMixedItemsWithFallbackMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/library/collections/" + testCollectionKey + "/items":
+			_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[
+				{"ratingKey":"movie-1","title":"Movie One","type":"movie","Guid":[{"id":"tmdb://101"}]},
+				{"ratingKey":"show-1","title":"Show One","type":"show","Guid":[{"id":"tvdb://202"}]},
+				{"ratingKey":"season-1","title":"Season 1","type":"season","parentTitle":"Show One","parentRatingKey":"show-parent","index":1}
+			]}}`))
+		case "/library/metadata/season-1":
+			_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[{"Guid":[{"id":"tvdb://303"},{"id":"tmdb://404"}]}]}}`))
+		case "/library/metadata/show-parent":
+			_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[{"Guid":[{"id":"tvdb://505"},{"id":"tmdb://606"}]}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
 
-		client := &Client{serverURL: server.URL, token: "token", doer: server.Client()}
-		items, err := client.GetCollectionItems(context.Background(), "collection-1")
-		if err != nil {
-			t.Fatalf("GetCollectionItems() error = %v", err)
-		}
-		if len(items) != 3 {
-			t.Fatalf("len(GetCollectionItems()) = %d, want 3", len(items))
-		}
-		if items[0].TMDBID != 101 {
-			t.Fatalf("movie TMDBID = %d, want 101", items[0].TMDBID)
-		}
-		if items[1].TVDBID != 202 {
-			t.Fatalf("show TVDBID = %d, want 202", items[1].TVDBID)
-		}
-		if items[2].TVDBID != 303 || items[2].TMDBID != 404 {
-			t.Fatalf("season item ids = (%d, %d), want (303, 404)", items[2].TVDBID, items[2].TMDBID)
-		}
-		if items[2].ShowTVDBID != 505 || items[2].ShowTMDBID != 606 {
-			t.Fatalf("season parent ids = (%d, %d), want (505, 606)", items[2].ShowTVDBID, items[2].ShowTMDBID)
-		}
-	})
+	client := &Client{serverURL: server.URL, token: "token", doer: server.Client()}
+	items, err := client.GetCollectionItems(context.Background(), testCollectionKey)
+	if err != nil {
+		t.Fatalf("GetCollectionItems() error = %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("len(GetCollectionItems()) = %d, want 3", len(items))
+	}
+	if items[0].TMDBID != 101 {
+		t.Fatalf("movie TMDBID = %d, want 101", items[0].TMDBID)
+	}
+	if items[1].TVDBID != 202 {
+		t.Fatalf("show TVDBID = %d, want 202", items[1].TVDBID)
+	}
+	if items[2].TVDBID != 303 || items[2].TMDBID != 404 {
+		t.Fatalf("season item ids = (%d, %d), want (303, 404)", items[2].TVDBID, items[2].TMDBID)
+	}
+	if items[2].ShowTVDBID != 505 || items[2].ShowTMDBID != 606 {
+		t.Fatalf("season parent ids = (%d, %d), want (505, 606)", items[2].ShowTVDBID, items[2].ShowTMDBID)
+	}
+}
 
-	t.Run("non-200 response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "bad", http.StatusBadGateway)
-		}))
-		defer server.Close()
+func TestGetCollectionItemsNon200Response(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "bad", http.StatusBadGateway)
+	}))
+	defer server.Close()
 
-		client := &Client{serverURL: server.URL, token: "token", doer: server.Client()}
-		if _, err := client.GetCollectionItems(context.Background(), "collection-1"); err == nil {
-			t.Fatal("GetCollectionItems() error = nil, want error")
-		}
-	})
+	client := &Client{serverURL: server.URL, token: "token", doer: server.Client()}
+	if _, err := client.GetCollectionItems(context.Background(), testCollectionKey); err == nil {
+		t.Fatal("GetCollectionItems() error = nil, want error")
+	}
+}
 
-	t.Run("invalid json", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte(`{`))
-		}))
-		defer server.Close()
+func TestGetCollectionItemsInvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{`))
+	}))
+	defer server.Close()
 
-		client := &Client{serverURL: server.URL, token: "token", doer: server.Client()}
-		if _, err := client.GetCollectionItems(context.Background(), "collection-1"); err == nil {
-			t.Fatal("GetCollectionItems() error = nil, want error")
-		}
-	})
+	client := &Client{serverURL: server.URL, token: "token", doer: server.Client()}
+	if _, err := client.GetCollectionItems(context.Background(), testCollectionKey); err == nil {
+		t.Fatal("GetCollectionItems() error = nil, want error")
+	}
 }
 
 func writeJSON(t *testing.T, w http.ResponseWriter, value any) {

@@ -28,17 +28,32 @@ var configEnvNames = []string{
 	"INTERVAL",
 }
 
+const (
+	testPlexURL        = "http://plex"
+	testRuntimePlexURL = "http://runtime"
+	testDotEnvPlexURL  = "http://dotenv"
+)
+
+type loadConfigTestCase struct {
+	name            string
+	env             map[string]string
+	dotEnv          string
+	wantTV          string
+	wantMovie       string
+	wantSearchAdded bool
+	wantSearchExist bool
+	wantErrContains []string
+}
+
+type parseHumanDurationTestCase struct {
+	name      string
+	input     string
+	want      time.Duration
+	wantError string
+}
+
 func TestLoad(t *testing.T) {
-	tests := []struct {
-		name            string
-		env             map[string]string
-		dotEnv          string
-		wantTV          string
-		wantMovie       string
-		wantSearchAdded bool
-		wantSearchExist bool
-		wantErrContains []string
-	}{
+	tests := []loadConfigTestCase{
 		{
 			name:            "uses dot env when runtime env absent",
 			dotEnv:          "PLEX_URL=http://plex\nPLEX_TOKEN=token\nPLEX_TV_COLLECTION=TV\nPLEX_MOVIE_COLLECTION=Movies\nSEARCH_ADDED=true\nSEARCH_EXISTING=true\n",
@@ -50,7 +65,7 @@ func TestLoad(t *testing.T) {
 		{
 			name: "runtime env takes precedence over dot env",
 			env: map[string]string{
-				"PLEX_URL":              "http://runtime",
+				"PLEX_URL":              testRuntimePlexURL,
 				"PLEX_TOKEN":            "runtime-token",
 				"PLEX_TV_COLLECTION":    "Runtime TV",
 				"PLEX_MOVIE_COLLECTION": "Runtime Movies",
@@ -69,7 +84,7 @@ func TestLoad(t *testing.T) {
 		{
 			name: "missing plex token",
 			env: map[string]string{
-				"PLEX_URL": "http://plex",
+				"PLEX_URL": testPlexURL,
 			},
 			wantErrContains: []string{"required env var PLEX_TOKEN is not set"},
 		},
@@ -80,7 +95,7 @@ func TestLoad(t *testing.T) {
 		{
 			name: "invalid search added",
 			env: map[string]string{
-				"PLEX_URL":     "http://plex",
+				"PLEX_URL":     testPlexURL,
 				"PLEX_TOKEN":   "token",
 				"SEARCH_ADDED": "nope",
 			},
@@ -89,7 +104,7 @@ func TestLoad(t *testing.T) {
 		{
 			name: "invalid search existing",
 			env: map[string]string{
-				"PLEX_URL":        "http://plex",
+				"PLEX_URL":        testPlexURL,
 				"PLEX_TOKEN":      "token",
 				"SEARCH_EXISTING": "nope",
 			},
@@ -99,45 +114,60 @@ func TestLoad(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resetConfigEnvForTest(t)
-			useTempWorkingDir(t)
-
-			if tt.dotEnv != "" {
-				writeFile(t, filepath.Join(".env"), tt.dotEnv)
-			}
-			for key, value := range tt.env {
-				t.Setenv(key, value)
-			}
-
-			cfg, err := Load()
-			if len(tt.wantErrContains) > 0 {
-				if err == nil {
-					t.Fatal("Load() error = nil, want error")
-				}
-				for _, want := range tt.wantErrContains {
-					if !strings.Contains(err.Error(), want) {
-						t.Fatalf("Load() error = %q, want substring %q", err.Error(), want)
-					}
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if cfg.TVCollectionName != tt.wantTV {
-				t.Fatalf("TVCollectionName = %q, want %q", cfg.TVCollectionName, tt.wantTV)
-			}
-			if cfg.MovieCollectionName != tt.wantMovie {
-				t.Fatalf("MovieCollectionName = %q, want %q", cfg.MovieCollectionName, tt.wantMovie)
-			}
-			if cfg.SearchAdded != tt.wantSearchAdded {
-				t.Fatalf("SearchAdded = %t, want %t", cfg.SearchAdded, tt.wantSearchAdded)
-			}
-			if cfg.SearchExisting != tt.wantSearchExist {
-				t.Fatalf("SearchExisting = %t, want %t", cfg.SearchExisting, tt.wantSearchExist)
-			}
+			runLoadConfigTestCase(t, tt)
 		})
+	}
+}
+
+func runLoadConfigTestCase(t *testing.T, tt loadConfigTestCase) {
+	t.Helper()
+	resetConfigEnvForTest(t)
+	useTempWorkingDir(t)
+
+	if tt.dotEnv != "" {
+		writeFile(t, filepath.Join(".env"), tt.dotEnv)
+	}
+	for key, value := range tt.env {
+		t.Setenv(key, value)
+	}
+
+	cfg, err := Load()
+	if len(tt.wantErrContains) > 0 {
+		assertErrorContainsAll(t, err, tt.wantErrContains)
+		return
+	}
+
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	assertLoadedConfig(t, cfg, tt)
+}
+
+func assertErrorContainsAll(t *testing.T, err error, wantErrContains []string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("Load() error = nil, want error")
+	}
+	for _, want := range wantErrContains {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Load() error = %q, want substring %q", err.Error(), want)
+		}
+	}
+}
+
+func assertLoadedConfig(t *testing.T, cfg *Config, tt loadConfigTestCase) {
+	t.Helper()
+	if cfg.TVCollectionName != tt.wantTV {
+		t.Fatalf("TVCollectionName = %q, want %q", cfg.TVCollectionName, tt.wantTV)
+	}
+	if cfg.MovieCollectionName != tt.wantMovie {
+		t.Fatalf("MovieCollectionName = %q, want %q", cfg.MovieCollectionName, tt.wantMovie)
+	}
+	if cfg.SearchAdded != tt.wantSearchAdded {
+		t.Fatalf("SearchAdded = %t, want %t", cfg.SearchAdded, tt.wantSearchAdded)
+	}
+	if cfg.SearchExisting != tt.wantSearchExist {
+		t.Fatalf("SearchExisting = %t, want %t", cfg.SearchExisting, tt.wantSearchExist)
 	}
 }
 
@@ -173,14 +203,14 @@ func TestLoadDotEnv(t *testing.T) {
 
 	t.Run("ignores malformed comments and blanks and keeps existing env", func(t *testing.T) {
 		resetConfigEnvForTest(t)
-		t.Setenv("PLEX_URL", "http://runtime")
+		t.Setenv("PLEX_URL", testRuntimePlexURL)
 
 		path := filepath.Join(t.TempDir(), ".env")
 		writeFile(t, path, strings.Join([]string{
 			"# comment",
 			"",
 			"malformed-line",
-			"PLEX_URL=http://dotenv",
+			"PLEX_URL=" + testDotEnvPlexURL,
 			"PLEX_TOKEN='quoted-token'",
 			"PLEX_TV_COLLECTION = \"TV Collection\"",
 		}, "\n"))
@@ -189,7 +219,7 @@ func TestLoadDotEnv(t *testing.T) {
 			t.Fatalf("loadDotEnv() error = %v", err)
 		}
 
-		if got := os.Getenv("PLEX_URL"); got != "http://runtime" {
+		if got := os.Getenv("PLEX_URL"); got != testRuntimePlexURL {
 			t.Fatalf("PLEX_URL = %q, want runtime value", got)
 		}
 		if got := os.Getenv("PLEX_TOKEN"); got != "quoted-token" {
@@ -260,12 +290,7 @@ func TestTrimMatchingQuotes(t *testing.T) {
 }
 
 func TestParseHumanDuration(t *testing.T) {
-	tests := []struct {
-		name      string
-		input     string
-		want      time.Duration
-		wantError string
-	}{
+	tests := []parseHumanDurationTestCase{
 		{name: "empty", input: "", want: 0},
 		{name: "minutes", input: "10m", want: 10 * time.Minute},
 		{name: "hours", input: "1h", want: time.Hour},
@@ -279,23 +304,28 @@ func TestParseHumanDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseHumanDuration(tt.input)
-			if tt.wantError != "" {
-				if err == nil {
-					t.Fatal("ParseHumanDuration() error = nil, want error")
-				}
-				if !strings.Contains(err.Error(), tt.wantError) {
-					t.Fatalf("ParseHumanDuration() error = %q, want substring %q", err.Error(), tt.wantError)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ParseHumanDuration() error = %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("ParseHumanDuration(%q) = %s, want %s", tt.input, got, tt.want)
-			}
+			runParseHumanDurationTestCase(t, tt)
 		})
+	}
+}
+
+func runParseHumanDurationTestCase(t *testing.T, tt parseHumanDurationTestCase) {
+	t.Helper()
+	got, err := ParseHumanDuration(tt.input)
+	if tt.wantError != "" {
+		if err == nil {
+			t.Fatal("ParseHumanDuration() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), tt.wantError) {
+			t.Fatalf("ParseHumanDuration() error = %q, want substring %q", err.Error(), tt.wantError)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("ParseHumanDuration() error = %v", err)
+	}
+	if got != tt.want {
+		t.Fatalf("ParseHumanDuration(%q) = %s, want %s", tt.input, got, tt.want)
 	}
 }
 

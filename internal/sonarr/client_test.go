@@ -9,93 +9,99 @@ import (
 	starrsonarr "golift.io/starr/sonarr"
 )
 
-func TestBuildAddSeriesInput(t *testing.T) {
+const (
+	buildUpdateSeriesInputErr = "buildUpdateSeriesInput() error = %v"
+	theOfficeTitle            = "The Office"
+)
+
+func TestBuildAddSeriesInputMonitorAll(t *testing.T) {
 	candidate := testSeriesCandidate()
 	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7}
-
-	t.Run("monitor all", func(t *testing.T) {
-		input, err := buildAddSeriesInput(candidate, CreateSeriesRequest{
-			TVDBID:                   candidate.TvdbID,
-			MonitorAll:               true,
-			SearchForMissingEpisodes: true,
-		}, defaults)
-		if err != nil {
-			t.Fatalf("buildAddSeriesInput() error = %v", err)
-		}
-		if input.AddOptions.Monitor != starrsonarr.MonitorAll {
-			t.Fatalf("Monitor = %q, want %q", input.AddOptions.Monitor, starrsonarr.MonitorAll)
-		}
-		if input.QualityProfileID != defaults.QualityProfileID || input.RootFolderPath != defaults.RootFolderPath {
-			t.Fatal("buildAddSeriesInput() did not map defaults")
-		}
-		if !input.AddOptions.SearchForMissingEpisodes {
-			t.Fatal("SearchForMissingEpisodes = false, want true")
-		}
-	})
-
-	t.Run("selected seasons", func(t *testing.T) {
-		input, err := buildAddSeriesInput(candidate, CreateSeriesRequest{MonitoredSeasons: []int{1, 3}}, defaults)
-		if err != nil {
-			t.Fatalf("buildAddSeriesInput() error = %v", err)
-		}
-		if input.AddOptions.Monitor != starrsonarr.MonitorSkip {
-			t.Fatalf("Monitor = %q, want %q", input.AddOptions.Monitor, starrsonarr.MonitorSkip)
-		}
-		if len(input.Seasons) != 3 || !input.Seasons[0].Monitored || input.Seasons[1].Monitored || !input.Seasons[2].Monitored {
-			t.Fatalf("Seasons = %+v, want seasons 1 and 3 monitored", input.Seasons)
-		}
-	})
-
-	t.Run("missing requested seasons", func(t *testing.T) {
-		_, err := buildAddSeriesInput(candidate, CreateSeriesRequest{MonitoredSeasons: []int{9}}, defaults)
-		if err == nil || !strings.Contains(err.Error(), "requested seasons 9") {
-			t.Fatalf("buildAddSeriesInput() error = %v, want requested seasons error", err)
-		}
-	})
+	input, err := buildAddSeriesInput(candidate, CreateSeriesRequest{
+		TVDBID:                   candidate.TvdbID,
+		MonitorAll:               true,
+		SearchForMissingEpisodes: true,
+	}, defaults)
+	if err != nil {
+		t.Fatalf("buildAddSeriesInput() error = %v", err)
+	}
+	if input.AddOptions.Monitor != starrsonarr.MonitorAll {
+		t.Fatalf("Monitor = %q, want %q", input.AddOptions.Monitor, starrsonarr.MonitorAll)
+	}
+	if input.QualityProfileID != defaults.QualityProfileID || input.RootFolderPath != defaults.RootFolderPath {
+		t.Fatal("buildAddSeriesInput() did not map defaults")
+	}
+	if !input.AddOptions.SearchForMissingEpisodes {
+		t.Fatal("SearchForMissingEpisodes = false, want true")
+	}
 }
 
-func TestBuildUpdateSeriesInput(t *testing.T) {
+func TestBuildAddSeriesInputSelectedSeasons(t *testing.T) {
+	candidate := testSeriesCandidate()
+	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7}
+	input, err := buildAddSeriesInput(candidate, CreateSeriesRequest{MonitoredSeasons: []int{1, 3}}, defaults)
+	if err != nil {
+		t.Fatalf("buildAddSeriesInput() error = %v", err)
+	}
+	if input.AddOptions.Monitor != starrsonarr.MonitorSkip {
+		t.Fatalf("Monitor = %q, want %q", input.AddOptions.Monitor, starrsonarr.MonitorSkip)
+	}
+	if len(input.Seasons) != 3 || !input.Seasons[0].Monitored || input.Seasons[1].Monitored || !input.Seasons[2].Monitored {
+		t.Fatalf("Seasons = %+v, want seasons 1 and 3 monitored", input.Seasons)
+	}
+}
+
+func TestBuildAddSeriesInputMissingRequestedSeasons(t *testing.T) {
+	candidate := testSeriesCandidate()
+	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7}
+	_, err := buildAddSeriesInput(candidate, CreateSeriesRequest{MonitoredSeasons: []int{9}}, defaults)
+	if err == nil || !strings.Contains(err.Error(), "requested seasons 9") {
+		t.Fatalf("buildAddSeriesInput() error = %v, want requested seasons error", err)
+	}
+}
+
+func TestBuildUpdateSeriesInputNoOpUpdate(t *testing.T) {
 	series := testExistingSeries()
+	input, changed, err := buildUpdateSeriesInput(series, CreateSeriesRequest{})
+	if err != nil {
+		t.Fatalf(buildUpdateSeriesInputErr, err)
+	}
+	if changed {
+		t.Fatal("changed = true, want false")
+	}
+	if input.ID != series.ID {
+		t.Fatalf("ID = %d, want %d", input.ID, series.ID)
+	}
+}
 
-	t.Run("no-op update", func(t *testing.T) {
-		input, changed, err := buildUpdateSeriesInput(series, CreateSeriesRequest{})
-		if err != nil {
-			t.Fatalf("buildUpdateSeriesInput() error = %v", err)
-		}
-		if changed {
-			t.Fatal("changed = true, want false")
-		}
-		if input.ID != series.ID {
-			t.Fatalf("ID = %d, want %d", input.ID, series.ID)
-		}
-	})
+func TestBuildUpdateSeriesInputMonitorAllChanges(t *testing.T) {
+	series := testExistingSeries()
+	_, changed, err := buildUpdateSeriesInput(series, CreateSeriesRequest{MonitorAll: true})
+	if err != nil {
+		t.Fatalf(buildUpdateSeriesInputErr, err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true")
+	}
+}
 
-	t.Run("monitor all changes", func(t *testing.T) {
-		_, changed, err := buildUpdateSeriesInput(series, CreateSeriesRequest{MonitorAll: true})
-		if err != nil {
-			t.Fatalf("buildUpdateSeriesInput() error = %v", err)
-		}
-		if !changed {
-			t.Fatal("changed = false, want true")
-		}
-	})
+func TestBuildUpdateSeriesInputSelectedSeasonChanges(t *testing.T) {
+	series := testExistingSeries()
+	input, changed, err := buildUpdateSeriesInput(series, CreateSeriesRequest{MonitoredSeasons: []int{2}})
+	if err != nil {
+		t.Fatalf(buildUpdateSeriesInputErr, err)
+	}
+	if !changed || !input.Seasons[1].Monitored {
+		t.Fatalf("buildUpdateSeriesInput() = (%+v, %t), want changed season 2", input.Seasons, changed)
+	}
+}
 
-	t.Run("selected season changes", func(t *testing.T) {
-		input, changed, err := buildUpdateSeriesInput(series, CreateSeriesRequest{MonitoredSeasons: []int{2}})
-		if err != nil {
-			t.Fatalf("buildUpdateSeriesInput() error = %v", err)
-		}
-		if !changed || !input.Seasons[1].Monitored {
-			t.Fatalf("buildUpdateSeriesInput() = (%+v, %t), want changed season 2", input.Seasons, changed)
-		}
-	})
-
-	t.Run("missing requested season", func(t *testing.T) {
-		_, _, err := buildUpdateSeriesInput(series, CreateSeriesRequest{MonitoredSeasons: []int{9}})
-		if err == nil || !strings.Contains(err.Error(), "requested seasons 9") {
-			t.Fatalf("buildUpdateSeriesInput() error = %v, want requested seasons error", err)
-		}
-	})
+func TestBuildUpdateSeriesInputMissingRequestedSeason(t *testing.T) {
+	series := testExistingSeries()
+	_, _, err := buildUpdateSeriesInput(series, CreateSeriesRequest{MonitoredSeasons: []int{9}})
+	if err == nil || !strings.Contains(err.Error(), "requested seasons 9") {
+		t.Fatalf("buildUpdateSeriesInput() error = %v, want requested seasons error", err)
+	}
 }
 
 func TestBuildMonitoredSeasons(t *testing.T) {
@@ -162,13 +168,15 @@ func TestFindSeason(t *testing.T) {
 	}
 }
 
-func TestTitleAndSelectorHelpers(t *testing.T) {
+func TestNormalizeTitle(t *testing.T) {
 	if got := normalizeTitle("  The.Office! "); got != "theoffice" {
 		t.Fatalf("normalizeTitle() = %q, want theoffice", got)
 	}
+}
 
-	series := &starrsonarr.Series{Title: "The Office", CleanTitle: "office us"}
-	if !titlesMatch(series, "The Office", normalizeTitle("The Office")) {
+func TestTitlesMatch(t *testing.T) {
+	series := &starrsonarr.Series{Title: theOfficeTitle, CleanTitle: "office us"}
+	if !titlesMatch(series, theOfficeTitle, normalizeTitle(theOfficeTitle)) {
 		t.Fatal("titlesMatch() exact title = false, want true")
 	}
 	if !titlesMatch(series, "The-Office", normalizeTitle("The-Office")) {
@@ -177,7 +185,9 @@ func TestTitleAndSelectorHelpers(t *testing.T) {
 	if !titlesMatch(series, "Office US", normalizeTitle("Office US")) {
 		t.Fatal("titlesMatch() clean title = false, want true")
 	}
+}
 
+func TestMatchRootFolder(t *testing.T) {
 	rootFolders := []*starrsonarr.RootFolder{{ID: 1, Path: "/tv-a"}, {ID: 2, Path: "/tv-b"}}
 	if folder, ok := matchRootFolder(rootFolders, "2"); !ok || folder.Path != "/tv-b" {
 		t.Fatalf("matchRootFolder(id) = (%+v, %t), want /tv-b", folder, ok)
@@ -188,7 +198,9 @@ func TestTitleAndSelectorHelpers(t *testing.T) {
 	if _, ok := matchRootFolder(rootFolders, "/missing"); ok {
 		t.Fatal("matchRootFolder(missing) = true, want false")
 	}
+}
 
+func TestMatchQualityProfile(t *testing.T) {
 	profiles := []*starrsonarr.QualityProfile{{ID: 10, Name: "HD"}, {ID: 20, Name: "UHD"}}
 	if profile, ok := matchQualityProfile(profiles, "20"); !ok || profile.Name != "UHD" {
 		t.Fatalf("matchQualityProfile(id) = (%+v, %t), want UHD", profile, ok)
@@ -199,7 +211,11 @@ func TestTitleAndSelectorHelpers(t *testing.T) {
 	if _, ok := matchQualityProfile(profiles, "sd"); ok {
 		t.Fatal("matchQualityProfile(missing) = true, want false")
 	}
+}
 
+func TestJoinHelpers(t *testing.T) {
+	rootFolders := []*starrsonarr.RootFolder{{ID: 1, Path: "/tv-a"}, {ID: 2, Path: "/tv-b"}}
+	profiles := []*starrsonarr.QualityProfile{{ID: 10, Name: "HD"}, {ID: 20, Name: "UHD"}}
 	if got := joinRootFolderPaths(rootFolders); got != "/tv-a, /tv-b" {
 		t.Fatalf("joinRootFolderPaths() = %q", got)
 	}
@@ -211,62 +227,63 @@ func TestTitleAndSelectorHelpers(t *testing.T) {
 	}
 }
 
-func TestClientFindSeries(t *testing.T) {
+func TestClientFindSeriesNotConfigured(t *testing.T) {
 	ctx := context.Background()
+	if _, err := (*Client)(nil).FindSeries(ctx, "Show", 1); err == nil {
+		t.Fatal("FindSeries() error = nil, want error")
+	}
+}
 
-	t.Run("not configured", func(t *testing.T) {
-		if _, err := (*Client)(nil).FindSeries(ctx, "Show", 1); err == nil {
-			t.Fatal("FindSeries() error = nil, want error")
-		}
-	})
+func TestClientFindSeriesTVDBHit(t *testing.T) {
+	ctx := context.Background()
+	client := &Client{api: fakeSonarrAPI{
+		getSeriesContext: func(context.Context, int64) ([]*starrsonarr.Series, error) {
+			return []*starrsonarr.Series{{Title: "Show", TvdbID: 123}}, nil
+		},
+	}}
+	match, err := client.FindSeries(ctx, "Show", 123)
+	if err != nil {
+		t.Fatalf("FindSeries() error = %v", err)
+	}
+	if match.MatchedBy != "tvdb" || match.Series.TvdbID != 123 {
+		t.Fatalf("FindSeries() = %+v, want tvdb match", match)
+	}
+}
 
-	t.Run("tvdb hit", func(t *testing.T) {
-		client := &Client{api: fakeSonarrAPI{
-			getSeriesContext: func(context.Context, int64) ([]*starrsonarr.Series, error) {
-				return []*starrsonarr.Series{{Title: "Show", TvdbID: 123}}, nil
-			},
-		}}
-		match, err := client.FindSeries(ctx, "Show", 123)
-		if err != nil {
-			t.Fatalf("FindSeries() error = %v", err)
-		}
-		if match.MatchedBy != "tvdb" || match.Series.TvdbID != 123 {
-			t.Fatalf("FindSeries() = %+v, want tvdb match", match)
-		}
-	})
+func TestClientFindSeriesTitleHitWhenTVDBMisses(t *testing.T) {
+	ctx := context.Background()
+	client := &Client{api: fakeSonarrAPI{
+		getSeriesContext: func(context.Context, int64) ([]*starrsonarr.Series, error) { return nil, nil },
+		getAllSeriesContext: func(context.Context) ([]*starrsonarr.Series, error) {
+			return []*starrsonarr.Series{{Title: theOfficeTitle}}, nil
+		},
+	}}
+	match, err := client.FindSeries(ctx, theOfficeTitle, 123)
+	if err != nil {
+		t.Fatalf("FindSeries() error = %v", err)
+	}
+	if match.MatchedBy != "title" {
+		t.Fatalf("MatchedBy = %q, want title", match.MatchedBy)
+	}
+}
 
-	t.Run("tvdb miss then title hit", func(t *testing.T) {
-		client := &Client{api: fakeSonarrAPI{
-			getSeriesContext: func(context.Context, int64) ([]*starrsonarr.Series, error) { return nil, nil },
-			getAllSeriesContext: func(context.Context) ([]*starrsonarr.Series, error) {
-				return []*starrsonarr.Series{{Title: "The Office"}}, nil
-			},
-		}}
-		match, err := client.FindSeries(ctx, "The Office", 123)
-		if err != nil {
-			t.Fatalf("FindSeries() error = %v", err)
-		}
-		if match.MatchedBy != "title" {
-			t.Fatalf("MatchedBy = %q, want title", match.MatchedBy)
-		}
-	})
+func TestClientFindSeriesBlankTitleReturnsNotFound(t *testing.T) {
+	ctx := context.Background()
+	client := &Client{api: fakeSonarrAPI{getSeriesContext: func(context.Context, int64) ([]*starrsonarr.Series, error) { return nil, nil }}}
+	_, err := client.FindSeries(ctx, "   ", 123)
+	if !errors.Is(err, ErrSeriesNotFound) {
+		t.Fatalf("FindSeries() error = %v, want ErrSeriesNotFound", err)
+	}
+}
 
-	t.Run("blank title with no tvdb match returns not found", func(t *testing.T) {
-		client := &Client{api: fakeSonarrAPI{getSeriesContext: func(context.Context, int64) ([]*starrsonarr.Series, error) { return nil, nil }}}
-		_, err := client.FindSeries(ctx, "   ", 123)
-		if !errors.Is(err, ErrSeriesNotFound) {
-			t.Fatalf("FindSeries() error = %v, want ErrSeriesNotFound", err)
-		}
-	})
-
-	t.Run("sdk errors are wrapped", func(t *testing.T) {
-		boom := errors.New("boom")
-		client := &Client{api: fakeSonarrAPI{getSeriesContext: func(context.Context, int64) ([]*starrsonarr.Series, error) { return nil, boom }}}
-		_, err := client.FindSeries(ctx, "Show", 123)
-		if err == nil || !strings.Contains(err.Error(), "looking up sonarr series by tvdb id 123") || !errors.Is(err, boom) {
-			t.Fatalf("FindSeries() error = %v, want wrapped boom", err)
-		}
-	})
+func TestClientFindSeriesWrapsSDKErrors(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("boom")
+	client := &Client{api: fakeSonarrAPI{getSeriesContext: func(context.Context, int64) ([]*starrsonarr.Series, error) { return nil, boom }}}
+	_, err := client.FindSeries(ctx, "Show", 123)
+	if err == nil || !strings.Contains(err.Error(), "looking up sonarr series by tvdb id 123") || !errors.Is(err, boom) {
+		t.Fatalf("FindSeries() error = %v, want wrapped boom", err)
+	}
 }
 
 func TestResolveAddSeriesDefaults(t *testing.T) {
@@ -313,139 +330,146 @@ func TestResolveAddSeriesDefaults(t *testing.T) {
 	})
 }
 
-func TestCreateAndPreviewSeries(t *testing.T) {
+func TestCreateSeriesNotConfigured(t *testing.T) {
 	ctx := context.Background()
 	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7, QualityProfileName: "HD"}
-
-	t.Run("not configured", func(t *testing.T) {
-		if _, err := (*Client)(nil).CreateSeries(ctx, CreateSeriesRequest{TVDBID: 1}, defaults); err == nil {
-			t.Fatal("CreateSeries() error = nil, want error")
-		}
-	})
-
-	t.Run("missing tvdb id", func(t *testing.T) {
-		client := &Client{api: fakeSonarrAPI{}}
-		if _, err := client.CreateSeries(ctx, CreateSeriesRequest{}, defaults); err == nil {
-			t.Fatal("CreateSeries() error = nil, want error")
-		}
-	})
-
-	t.Run("lookup failure wrapped", func(t *testing.T) {
-		boom := errors.New("boom")
-		client := &Client{api: fakeSonarrAPI{getSeriesLookupContext: func(context.Context, string, int64) ([]*starrsonarr.Series, error) { return nil, boom }}}
-		if _, err := client.CreateSeries(ctx, CreateSeriesRequest{Title: "Show", TVDBID: 1}, defaults); err == nil || !errors.Is(err, boom) {
-			t.Fatalf("CreateSeries() error = %v, want wrapped boom", err)
-		}
-	})
-
-	t.Run("add request mapped", func(t *testing.T) {
-		var got *starrsonarr.AddSeriesInput
-		client := &Client{api: fakeSonarrAPI{
-			getSeriesLookupContext: func(context.Context, string, int64) ([]*starrsonarr.Series, error) {
-				return []*starrsonarr.Series{testSeriesCandidate()}, nil
-			},
-			addSeriesContext: func(_ context.Context, input *starrsonarr.AddSeriesInput) (*starrsonarr.Series, error) {
-				got = input
-				return &starrsonarr.Series{Title: input.Title}, nil
-			},
-		}}
-		series, err := client.CreateSeries(ctx, CreateSeriesRequest{Title: "Show", TVDBID: 123, MonitorAll: true, SearchForMissingEpisodes: true}, defaults)
-		if err != nil {
-			t.Fatalf("CreateSeries() error = %v", err)
-		}
-		if series.Title != "Show" || got == nil || got.RootFolderPath != "/tv" || got.QualityProfileID != 7 || !got.AddOptions.SearchForMissingEpisodes {
-			t.Fatalf("CreateSeries() captured input = %+v", got)
-		}
-	})
-
-	t.Run("add failure wrapped", func(t *testing.T) {
-		boom := errors.New("boom")
-		client := &Client{api: fakeSonarrAPI{
-			getSeriesLookupContext: func(context.Context, string, int64) ([]*starrsonarr.Series, error) {
-				return []*starrsonarr.Series{testSeriesCandidate()}, nil
-			},
-			addSeriesContext: func(context.Context, *starrsonarr.AddSeriesInput) (*starrsonarr.Series, error) { return nil, boom },
-		}}
-		if _, err := client.CreateSeries(ctx, CreateSeriesRequest{Title: "Show", TVDBID: 123, MonitorAll: true}, defaults); err == nil || !errors.Is(err, boom) {
-			t.Fatalf("CreateSeries() error = %v, want wrapped boom", err)
-		}
-	})
-
-	t.Run("preview returns candidate title", func(t *testing.T) {
-		client := &Client{api: fakeSonarrAPI{getSeriesLookupContext: func(context.Context, string, int64) ([]*starrsonarr.Series, error) {
-			return []*starrsonarr.Series{testSeriesCandidate()}, nil
-		}}}
-		title, err := client.PreviewCreateSeries(ctx, CreateSeriesRequest{Title: "Show", TVDBID: 123, MonitorAll: true}, defaults)
-		if err != nil {
-			t.Fatalf("PreviewCreateSeries() error = %v", err)
-		}
-		if title != "Show" {
-			t.Fatalf("PreviewCreateSeries() = %q, want Show", title)
-		}
-	})
+	if _, err := (*Client)(nil).CreateSeries(ctx, CreateSeriesRequest{TVDBID: 1}, defaults); err == nil {
+		t.Fatal("CreateSeries() error = nil, want error")
+	}
 }
 
-func TestUpdateAndPreviewSeriesMonitoring(t *testing.T) {
+func TestCreateSeriesMissingTVDBID(t *testing.T) {
 	ctx := context.Background()
+	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7, QualityProfileName: "HD"}
+	client := &Client{api: fakeSonarrAPI{}}
+	if _, err := client.CreateSeries(ctx, CreateSeriesRequest{}, defaults); err == nil {
+		t.Fatal("CreateSeries() error = nil, want error")
+	}
+}
 
-	t.Run("nil series", func(t *testing.T) {
-		client := &Client{api: fakeSonarrAPI{}}
-		if _, _, err := client.UpdateSeriesMonitoring(ctx, nil, CreateSeriesRequest{}); err == nil {
-			t.Fatal("UpdateSeriesMonitoring() error = nil, want error")
-		}
-		if _, err := client.PreviewUpdateSeriesMonitoring(nil, CreateSeriesRequest{}); err == nil {
-			t.Fatal("PreviewUpdateSeriesMonitoring() error = nil, want error")
-		}
-	})
+func TestCreateSeriesLookupFailureWrapped(t *testing.T) {
+	ctx := context.Background()
+	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7, QualityProfileName: "HD"}
+	boom := errors.New("boom")
+	client := &Client{api: fakeSonarrAPI{getSeriesLookupContext: func(context.Context, string, int64) ([]*starrsonarr.Series, error) { return nil, boom }}}
+	if _, err := client.CreateSeries(ctx, CreateSeriesRequest{Title: "Show", TVDBID: 1}, defaults); err == nil || !errors.Is(err, boom) {
+		t.Fatalf("CreateSeries() error = %v, want wrapped boom", err)
+	}
+}
 
-	t.Run("unchanged returns existing series", func(t *testing.T) {
-		series := testExistingSeries()
-		client := &Client{api: fakeSonarrAPI{}}
-		updated, changed, err := client.UpdateSeriesMonitoring(ctx, series, CreateSeriesRequest{})
-		if err != nil {
-			t.Fatalf("UpdateSeriesMonitoring() error = %v", err)
-		}
-		if changed || updated != series {
-			t.Fatalf("UpdateSeriesMonitoring() = (%+v, %t), want unchanged original", updated, changed)
-		}
-		preview, err := client.PreviewUpdateSeriesMonitoring(series, CreateSeriesRequest{})
-		if err != nil || preview {
-			t.Fatalf("PreviewUpdateSeriesMonitoring() = (%t, %v), want false nil", preview, err)
-		}
-	})
+func TestCreateSeriesAddRequestMapped(t *testing.T) {
+	ctx := context.Background()
+	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7, QualityProfileName: "HD"}
+	var got *starrsonarr.AddSeriesInput
+	client := &Client{api: fakeSonarrAPI{
+		getSeriesLookupContext: func(context.Context, string, int64) ([]*starrsonarr.Series, error) {
+			return []*starrsonarr.Series{testSeriesCandidate()}, nil
+		},
+		addSeriesContext: func(_ context.Context, input *starrsonarr.AddSeriesInput) (*starrsonarr.Series, error) {
+			got = input
+			return &starrsonarr.Series{Title: input.Title}, nil
+		},
+	}}
+	series, err := client.CreateSeries(ctx, CreateSeriesRequest{Title: "Show", TVDBID: 123, MonitorAll: true, SearchForMissingEpisodes: true}, defaults)
+	if err != nil {
+		t.Fatalf("CreateSeries() error = %v", err)
+	}
+	if series.Title != "Show" || got == nil || got.RootFolderPath != "/tv" || got.QualityProfileID != 7 || !got.AddOptions.SearchForMissingEpisodes {
+		t.Fatalf("CreateSeries() captured input = %+v", got)
+	}
+}
 
-	t.Run("changed calls update", func(t *testing.T) {
-		series := testExistingSeries()
-		called := false
-		client := &Client{api: fakeSonarrAPI{updateSeriesContext: func(_ context.Context, input *starrsonarr.AddSeriesInput, moveFiles bool) (*starrsonarr.Series, error) {
-			called = true
-			if moveFiles {
-				t.Fatal("moveFiles = true, want false")
-			}
-			return &starrsonarr.Series{Title: input.Title, Monitored: input.Monitored, Seasons: input.Seasons}, nil
-		}}}
-		updated, changed, err := client.UpdateSeriesMonitoring(ctx, series, CreateSeriesRequest{MonitoredSeasons: []int{2}})
-		if err != nil {
-			t.Fatalf("UpdateSeriesMonitoring() error = %v", err)
-		}
-		if !called || !changed || updated == nil {
-			t.Fatalf("UpdateSeriesMonitoring() = (%+v, %t, %v), want changed update call", updated, changed, err)
-		}
-		preview, err := client.PreviewUpdateSeriesMonitoring(series, CreateSeriesRequest{MonitoredSeasons: []int{2}})
-		if err != nil || !preview {
-			t.Fatalf("PreviewUpdateSeriesMonitoring() = (%t, %v), want true nil", preview, err)
-		}
-	})
+func TestCreateSeriesAddFailureWrapped(t *testing.T) {
+	ctx := context.Background()
+	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7, QualityProfileName: "HD"}
+	boom := errors.New("boom")
+	client := &Client{api: fakeSonarrAPI{
+		getSeriesLookupContext: func(context.Context, string, int64) ([]*starrsonarr.Series, error) {
+			return []*starrsonarr.Series{testSeriesCandidate()}, nil
+		},
+		addSeriesContext: func(context.Context, *starrsonarr.AddSeriesInput) (*starrsonarr.Series, error) { return nil, boom },
+	}}
+	if _, err := client.CreateSeries(ctx, CreateSeriesRequest{Title: "Show", TVDBID: 123, MonitorAll: true}, defaults); err == nil || !errors.Is(err, boom) {
+		t.Fatalf("CreateSeries() error = %v, want wrapped boom", err)
+	}
+}
 
-	t.Run("update failure wrapped", func(t *testing.T) {
-		boom := errors.New("boom")
-		client := &Client{api: fakeSonarrAPI{updateSeriesContext: func(context.Context, *starrsonarr.AddSeriesInput, bool) (*starrsonarr.Series, error) {
-			return nil, boom
-		}}}
-		if _, _, err := client.UpdateSeriesMonitoring(ctx, testExistingSeries(), CreateSeriesRequest{MonitoredSeasons: []int{2}}); err == nil || !errors.Is(err, boom) {
-			t.Fatalf("UpdateSeriesMonitoring() error = %v, want wrapped boom", err)
+func TestPreviewCreateSeriesReturnsCandidateTitle(t *testing.T) {
+	ctx := context.Background()
+	defaults := AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileID: 7, QualityProfileName: "HD"}
+	client := &Client{api: fakeSonarrAPI{getSeriesLookupContext: func(context.Context, string, int64) ([]*starrsonarr.Series, error) {
+		return []*starrsonarr.Series{testSeriesCandidate()}, nil
+	}}}
+	title, err := client.PreviewCreateSeries(ctx, CreateSeriesRequest{Title: "Show", TVDBID: 123, MonitorAll: true}, defaults)
+	if err != nil {
+		t.Fatalf("PreviewCreateSeries() error = %v", err)
+	}
+	if title != "Show" {
+		t.Fatalf("PreviewCreateSeries() = %q, want Show", title)
+	}
+}
+
+func TestUpdateSeriesMonitoringNilSeries(t *testing.T) {
+	ctx := context.Background()
+	client := &Client{api: fakeSonarrAPI{}}
+	if _, _, err := client.UpdateSeriesMonitoring(ctx, nil, CreateSeriesRequest{}); err == nil {
+		t.Fatal("UpdateSeriesMonitoring() error = nil, want error")
+	}
+	if _, err := client.PreviewUpdateSeriesMonitoring(nil, CreateSeriesRequest{}); err == nil {
+		t.Fatal("PreviewUpdateSeriesMonitoring() error = nil, want error")
+	}
+}
+
+func TestUpdateSeriesMonitoringUnchangedReturnsExistingSeries(t *testing.T) {
+	ctx := context.Background()
+	series := testExistingSeries()
+	client := &Client{api: fakeSonarrAPI{}}
+	updated, changed, err := client.UpdateSeriesMonitoring(ctx, series, CreateSeriesRequest{})
+	if err != nil {
+		t.Fatalf("UpdateSeriesMonitoring() error = %v", err)
+	}
+	if changed || updated != series {
+		t.Fatalf("UpdateSeriesMonitoring() = (%+v, %t), want unchanged original", updated, changed)
+	}
+	preview, err := client.PreviewUpdateSeriesMonitoring(series, CreateSeriesRequest{})
+	if err != nil || preview {
+		t.Fatalf("PreviewUpdateSeriesMonitoring() = (%t, %v), want false nil", preview, err)
+	}
+}
+
+func TestUpdateSeriesMonitoringChangedCallsUpdate(t *testing.T) {
+	ctx := context.Background()
+	series := testExistingSeries()
+	called := false
+	client := &Client{api: fakeSonarrAPI{updateSeriesContext: func(_ context.Context, input *starrsonarr.AddSeriesInput, moveFiles bool) (*starrsonarr.Series, error) {
+		called = true
+		if moveFiles {
+			t.Fatal("moveFiles = true, want false")
 		}
-	})
+		return &starrsonarr.Series{Title: input.Title, Monitored: input.Monitored, Seasons: input.Seasons}, nil
+	}}}
+	updated, changed, err := client.UpdateSeriesMonitoring(ctx, series, CreateSeriesRequest{MonitoredSeasons: []int{2}})
+	if err != nil {
+		t.Fatalf("UpdateSeriesMonitoring() error = %v", err)
+	}
+	if !called || !changed || updated == nil {
+		t.Fatalf("UpdateSeriesMonitoring() = (%+v, %t, %v), want changed update call", updated, changed, err)
+	}
+	preview, err := client.PreviewUpdateSeriesMonitoring(series, CreateSeriesRequest{MonitoredSeasons: []int{2}})
+	if err != nil || !preview {
+		t.Fatalf("PreviewUpdateSeriesMonitoring() = (%t, %v), want true nil", preview, err)
+	}
+}
+
+func TestUpdateSeriesMonitoringUpdateFailureWrapped(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("boom")
+	client := &Client{api: fakeSonarrAPI{updateSeriesContext: func(context.Context, *starrsonarr.AddSeriesInput, bool) (*starrsonarr.Series, error) {
+		return nil, boom
+	}}}
+	if _, _, err := client.UpdateSeriesMonitoring(ctx, testExistingSeries(), CreateSeriesRequest{MonitoredSeasons: []int{2}}); err == nil || !errors.Is(err, boom) {
+		t.Fatalf("UpdateSeriesMonitoring() error = %v, want wrapped boom", err)
+	}
 }
 
 func TestSearchSeason(t *testing.T) {
