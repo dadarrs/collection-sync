@@ -73,6 +73,32 @@ The Docker image defaults to the `run` command. Pass arguments to override:
 docker run --rm --env-file .env collection-sync movies list
 ```
 
+Pull the published container image from GHCR:
+
+```bash
+docker pull ghcr.io/dadarrs/collection-sync:latest
+docker run --rm --env-file .env ghcr.io/dadarrs/collection-sync:latest
+docker run --rm --env-file .env ghcr.io/dadarrs/collection-sync:latest movies list
+```
+
+Use Docker Compose:
+
+```yaml
+services:
+  collection-sync:
+    image: ghcr.io/dadarrs/collection-sync:latest
+    env_file:
+      - .env
+    restart: unless-stopped
+```
+
+The container exits after a single sync unless `INTERVAL` is set in `.env`. To run a one-off command with Compose, override the default command:
+
+```bash
+docker compose run --rm collection-sync movies list
+docker compose run --rm collection-sync tv sync --dry-run
+```
+
 ## Commands
 
 | Command | Purpose |

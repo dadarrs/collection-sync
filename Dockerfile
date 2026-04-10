@@ -1,8 +1,11 @@
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 RUN apk add --no-cache ca-certificates
 
 WORKDIR /src
+
+ARG TARGETOS
+ARG TARGETARCH
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -10,11 +13,13 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath \
-    -ldflags="-s -w" \
-    -o /collection-sync \
-    ./cmd/collection-sync
+RUN export GOOS="${TARGETOS:-$(go env GOOS)}" && \
+    export GOARCH="${TARGETARCH:-$(go env GOARCH)}" && \
+    CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build \
+        -trimpath \
+        -ldflags="-s -w" \
+        -o /collection-sync \
+        ./cmd/collection-sync
 
 FROM scratch
 
