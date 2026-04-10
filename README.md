@@ -1,3 +1,6 @@
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=dadarrs_collection-sync&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=dadarrs_collection-sync)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=dadarrs_collection-sync&metric=coverage)](https://sonarcloud.io/summary/new_code?id=dadarrs_collection-sync)
+
 # Collection Sync
 
 `collection-sync` keeps Plex collections aligned with Sonarr and Radarr. It can list the contents of a Plex collection, check whether those items already exist in Sonarr or Radarr, and sync missing or unmonitored items.
