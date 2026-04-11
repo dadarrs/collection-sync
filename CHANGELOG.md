@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1](https://github.com/dadarrs/collection-sync/compare/v0.1.0...v0.1.1) (2026-04-11)
+
+
+### Features
+
+* add progress feedback for large collection fetching ([#21](https://github.com/dadarrs/collection-sync/issues/21)) ([a18a2e8](https://github.com/dadarrs/collection-sync/commit/a18a2e83a5afed57bef777616753a9f199e46fce))
+* **ui:** add progress bar and table rendering with themed styles ([#25](https://github.com/dadarrs/collection-sync/issues/25)) ([d7895d3](https://github.com/dadarrs/collection-sync/commit/d7895d3ee65f623b8c190153c9ef311f93e9d508))
+
 ## 0.1.0 (2026-04-11)
 
 
