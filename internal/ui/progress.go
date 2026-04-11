@@ -40,9 +40,9 @@ func (r *Renderer) NewProgress(w io.Writer, label string, total int) *Progress {
 	}
 }
 
-// Update renders the progress bar at current/total. TTY output updates in
-// place and writes a final newline on completion; non-TTY output is emitted
-// as newline-delimited progress updates.
+// Update renders the progress bar at current/total. TTY output uses carriage
+// return to update in place and writes a final newline on completion; non-TTY
+// output is emitted as newline-delimited progress updates.
 func (p *Progress) Update(current int) {
 	if p.total == 0 {
 		return

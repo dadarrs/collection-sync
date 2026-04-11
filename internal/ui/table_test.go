@@ -208,14 +208,11 @@ func TestAddRowNormalizesColumnCount(t *testing.T) {
 	r := &Renderer{tty: false, theme: PlainTheme()}
 	tbl := r.NewTable([]string{"#", "TITLE", "STATUS"}, 2)
 
-	tbl.AddRow("1", "Movie")
-	tbl.AddRow("2", "Movie 2", "added", "ignored")
-
-	if got, want := tbl.rows[0], []string{"1", "Movie", ""}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("AddRow(short) = %#v, want %#v", got, want)
+	if got, want := tbl.normalizeRow([]string{"1", "Movie"}), []string{"1", "Movie", ""}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalizeRow(short) = %#v, want %#v", got, want)
 	}
-	if got, want := tbl.rows[1], []string{"2", "Movie 2", "added"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("AddRow(long) = %#v, want %#v", got, want)
+	if got, want := tbl.normalizeRow([]string{"2", "Movie 2", "added", "ignored"}), []string{"2", "Movie 2", "added"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalizeRow(long) = %#v, want %#v", got, want)
 	}
 }
 
