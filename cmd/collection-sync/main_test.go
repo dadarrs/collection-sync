@@ -16,6 +16,7 @@ import (
 	plexpkg "github.com/dadarrs/collection-sync/internal/plex"
 	radarrpkg "github.com/dadarrs/collection-sync/internal/radarr"
 	sonarrpkg "github.com/dadarrs/collection-sync/internal/sonarr"
+	"github.com/dadarrs/collection-sync/internal/ui"
 )
 
 const (
@@ -94,13 +95,14 @@ func TestEvaluateCheckHelpers(t *testing.T) {
 
 func TestSummaryPrintersOnlyEmitTrackedStatuses(t *testing.T) {
 	var buf bytes.Buffer
-	printTVCheckSummary(&buf, map[string]int{statusPresent: 2, statusFailed: 1})
+	r := ui.New(&buf)
+	printTVCheckSummary(&buf, r, map[string]int{statusPresent: 2, statusFailed: 1})
 	if got := buf.String(); got != "present: 2\n" {
 		t.Fatalf("printTVCheckSummary() = %q", got)
 	}
 
 	buf.Reset()
-	printMovieSyncSummary(&buf, map[string]int{statusAdded: 1, statusFailed: 2})
+	printMovieSyncSummary(&buf, r, map[string]int{statusAdded: 1, statusFailed: 2})
 	if got := buf.String(); !strings.Contains(got, "added: 1") || !strings.Contains(got, "failed: 2") {
 		t.Fatalf("printMovieSyncSummary() = %q", got)
 	}
@@ -201,24 +203,9 @@ func TestSeasonFormattingHelpers(t *testing.T) {
 	}
 }
 
-func TestWriteHelpers(t *testing.T) {
-	var buf bytes.Buffer
-	if err := writeTVSyncRow(&buf, 1, tvSyncTarget{Title: "Show", TVDBID: 10, Seasons: map[int]struct{}{1: {}}}, statusAdded, "detail"); err != nil {
-		t.Fatalf("writeTVSyncRow() error = %v", err)
-	}
-	if !strings.Contains(buf.String(), "Show") {
-		t.Fatalf("writeTVSyncRow() = %q", buf.String())
-	}
-	buf.Reset()
-	if err := writeMovieSyncRow(&buf, 1, movieSyncTarget{Title: "Movie", TMDBID: 20}, statusAdded, "detail"); err != nil {
-		t.Fatalf("writeMovieSyncRow() error = %v", err)
-	}
-	if !strings.Contains(buf.String(), "Movie") {
-		t.Fatalf("writeMovieSyncRow() = %q", buf.String())
-	}
-	buf.Reset()
-	if err := writef(&buf, "%s %d", "value", 1); err != nil || buf.String() != "value 1" {
-		t.Fatalf("writef() = (%q, %v)", buf.String(), err)
+func TestFormatInt(t *testing.T) {
+	if got := ui.FormatInt(42); got != "42" {
+		t.Fatalf("FormatInt(42) = %q", got)
 	}
 }
 
@@ -289,22 +276,16 @@ func TestResolveCollectionPrintsProgress(t *testing.T) {
 }
 
 func TestNewCollectionProgressFunc(t *testing.T) {
-	var generic bytes.Buffer
-	progress := newProgressFunc(&generic, "Processing Sonarr sync targets")
-	progress(0, 2)
-	if got := generic.String(); got != "\rProcessing Sonarr sync targets: 0/2" {
-		t.Fatalf("newProgressFunc(0,2) = %q", got)
-	}
-
 	var buf bytes.Buffer
-	collectionProgress := newCollectionProgressFunc(&buf)
+	r := ui.New(&buf)
+	collectionProgress := newCollectionProgressFunc(r, &buf)
 	collectionProgress(1, 3)
-	if got := buf.String(); got != "\rProcessing collection items: 1/3" {
+	if got := buf.String(); !strings.Contains(got, "Processing collection items") || !strings.Contains(got, "1/3") {
 		t.Fatalf("progress(1,3) = %q", got)
 	}
 	buf.Reset()
 	collectionProgress(3, 3)
-	if got := buf.String(); got != "\rProcessing collection items: 3/3\n" {
+	if got := buf.String(); !strings.Contains(got, "3/3") || !strings.HasSuffix(got, "\n") {
 		t.Fatalf("progress(3,3) = %q", got)
 	}
 }
@@ -334,7 +315,7 @@ func TestSyncCommandsEmitProgressToStderr(t *testing.T) {
 			t.Fatalf("SyncTVCmd.Run() error = %v", err)
 		}
 		gotErr := errOut.String()
-		if !strings.Contains(gotErr, "\rProcessing Sonarr sync targets: 0/1") || !strings.Contains(gotErr, "\rProcessing Sonarr sync targets: 1/1\n") {
+		if !strings.Contains(gotErr, "Processing Sonarr sync targets") || !strings.Contains(gotErr, "1/1") {
 			t.Fatalf("SyncTVCmd.Run() stderr = %q", gotErr)
 		}
 		if strings.Contains(out.String(), "Processing Sonarr sync targets") {
@@ -366,7 +347,7 @@ func TestSyncCommandsEmitProgressToStderr(t *testing.T) {
 			t.Fatalf("SyncMoviesCmd.Run() error = %v", err)
 		}
 		gotErr := errOut.String()
-		if !strings.Contains(gotErr, "\rProcessing Radarr sync targets: 0/1") || !strings.Contains(gotErr, "\rProcessing Radarr sync targets: 1/1\n") {
+		if !strings.Contains(gotErr, "Processing Radarr sync targets") || !strings.Contains(gotErr, "1/1") {
 			t.Fatalf("SyncMoviesCmd.Run() stderr = %q", gotErr)
 		}
 		if strings.Contains(out.String(), "Processing Radarr sync targets") {
@@ -986,7 +967,7 @@ func baseConfig() *config.Config {
 func newTestDeps(cfg *config.Config) (*deps, *bytes.Buffer, *bytes.Buffer) {
 	out := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
-	return &deps{cfg: cfg, out: out, errOut: errOut}, out, errOut
+	return &deps{cfg: cfg, out: out, errOut: errOut, ui: ui.New(out)}, out, errOut
 }
 
 var _ io.Writer = (*bytes.Buffer)(nil)
