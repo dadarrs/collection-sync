@@ -214,6 +214,12 @@ func TestAddRowNormalizesColumnCount(t *testing.T) {
 	if got, want := tbl.normalizeRow([]string{"2", "Movie 2", "added", "ignored"}), []string{"2", "Movie 2", "added"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("normalizeRow(long) = %#v, want %#v", got, want)
 	}
+
+	tbl.AddRow("3", "Movie 3")
+	rows := tbl.normalizedRows()
+	if got, ok := tbl.rowValue(rows[0], 2); !ok || got != "" {
+		t.Fatalf("rowValue(normalized AddRow) = (%q, %t), want (\"\", true)", got, ok)
+	}
 }
 
 func TestRenderStyledHandlesShortRows(t *testing.T) {
