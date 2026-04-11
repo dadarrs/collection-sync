@@ -289,17 +289,90 @@ func TestResolveCollectionPrintsProgress(t *testing.T) {
 }
 
 func TestNewCollectionProgressFunc(t *testing.T) {
+	var generic bytes.Buffer
+	progress := newProgressFunc(&generic, "Processing Sonarr sync targets")
+	progress(0, 2)
+	if got := generic.String(); got != "\rProcessing Sonarr sync targets: 0/2" {
+		t.Fatalf("newProgressFunc(0,2) = %q", got)
+	}
+
 	var buf bytes.Buffer
-	progress := newCollectionProgressFunc(&buf)
-	progress(1, 3)
+	collectionProgress := newCollectionProgressFunc(&buf)
+	collectionProgress(1, 3)
 	if got := buf.String(); got != "\rProcessing collection items: 1/3" {
 		t.Fatalf("progress(1,3) = %q", got)
 	}
 	buf.Reset()
-	progress(3, 3)
+	collectionProgress(3, 3)
 	if got := buf.String(); got != "\rProcessing collection items: 3/3\n" {
 		t.Fatalf("progress(3,3) = %q", got)
 	}
+}
+
+func TestSyncCommandsEmitProgressToStderr(t *testing.T) {
+	t.Run("tv sync", func(t *testing.T) {
+		d, out, errOut := newTestDeps(baseConfig())
+		d.plex = fakePlexService{
+			findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+			getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+				return []plexpkg.Item{{Title: "Show", Type: "show", TVDBID: 100}}, nil
+			},
+		}
+		d.sonarr = fakeSonarrService{
+			findSeries: func(context.Context, string, int64) (*sonarrpkg.SeriesMatch, error) {
+				return nil, sonarrpkg.ErrSeriesNotFound
+			},
+			resolveAddSeriesDefaults: func(context.Context, string, string) (sonarrpkg.AddSeriesDefaults, error) {
+				return sonarrpkg.AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileName: "HD"}, nil
+			},
+			previewCreateSeries: func(_ context.Context, request sonarrpkg.CreateSeriesRequest, _ sonarrpkg.AddSeriesDefaults) (string, error) {
+				return request.Title, nil
+			},
+		}
+
+		if err := (&SyncTVCmd{DryRun: true}).Run(d); err != nil {
+			t.Fatalf("SyncTVCmd.Run() error = %v", err)
+		}
+		gotErr := errOut.String()
+		if !strings.Contains(gotErr, "\rProcessing Sonarr sync targets: 0/1") || !strings.Contains(gotErr, "\rProcessing Sonarr sync targets: 1/1\n") {
+			t.Fatalf("SyncTVCmd.Run() stderr = %q", gotErr)
+		}
+		if strings.Contains(out.String(), "Processing Sonarr sync targets") {
+			t.Fatalf("SyncTVCmd.Run() stdout unexpectedly contains progress: %q", out.String())
+		}
+	})
+
+	t.Run("movie sync", func(t *testing.T) {
+		d, out, errOut := newTestDeps(baseConfig())
+		d.plex = fakePlexService{
+			findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+			getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+				return []plexpkg.Item{{Title: "Movie", TMDBID: 200}}, nil
+			},
+		}
+		d.radarr = fakeRadarrService{
+			findMovie: func(context.Context, string, int64) (*radarrpkg.MovieMatch, error) {
+				return nil, radarrpkg.ErrMovieNotFound
+			},
+			resolveAddMovieDefaults: func(context.Context, string, string) (radarrpkg.AddMovieDefaults, error) {
+				return radarrpkg.AddMovieDefaults{RootFolderPath: testMoviesRootPath, QualityProfileName: "HD"}, nil
+			},
+			previewCreateMovie: func(_ context.Context, request radarrpkg.CreateMovieRequest, _ radarrpkg.AddMovieDefaults) (string, error) {
+				return request.Title, nil
+			},
+		}
+
+		if err := (&SyncMoviesCmd{DryRun: true}).Run(d); err != nil {
+			t.Fatalf("SyncMoviesCmd.Run() error = %v", err)
+		}
+		gotErr := errOut.String()
+		if !strings.Contains(gotErr, "\rProcessing Radarr sync targets: 0/1") || !strings.Contains(gotErr, "\rProcessing Radarr sync targets: 1/1\n") {
+			t.Fatalf("SyncMoviesCmd.Run() stderr = %q", gotErr)
+		}
+		if strings.Contains(out.String(), "Processing Radarr sync targets") {
+			t.Fatalf("SyncMoviesCmd.Run() stdout unexpectedly contains progress: %q", out.String())
+		}
+	})
 }
 
 func TestLookupCaches(t *testing.T) {

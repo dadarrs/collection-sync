@@ -374,6 +374,10 @@ func (c *SyncTVCmd) Run(d *deps) error {
 	if err := writef(w, "#\tSHOW\tTVDB\tMONITOR\tSTATUS\tDETAIL\n"); err != nil {
 		return err
 	}
+	progress := newSyncProgressFunc(d.errorOutput(), "Processing Sonarr sync targets")
+	if len(targets) > 0 {
+		progress(0, len(targets))
+	}
 	for i, target := range targets {
 		status, detail, syncErr := d.processTVSyncTarget(ctx, lookupCache, target, &defaults, &defaultsResolved, c.DryRun)
 		statusCounts[status]++
@@ -381,6 +385,7 @@ func (c *SyncTVCmd) Run(d *deps) error {
 		if err := writeTVSyncRow(w, i+1, target, status, detail); err != nil {
 			return err
 		}
+		progress(i+1, len(targets))
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -419,6 +424,10 @@ func (c *SyncMoviesCmd) Run(d *deps) error {
 	if err := writef(w, "#\tTITLE\tTMDB\tSTATUS\tDETAIL\n"); err != nil {
 		return err
 	}
+	progress := newSyncProgressFunc(d.errorOutput(), "Processing Radarr sync targets")
+	if len(targets) > 0 {
+		progress(0, len(targets))
+	}
 	for i, target := range targets {
 		status, detail, syncErr := d.processMovieSyncTarget(ctx, lookupCache, target, &defaults, &defaultsResolved, c.DryRun)
 		statusCounts[status]++
@@ -426,6 +435,7 @@ func (c *SyncMoviesCmd) Run(d *deps) error {
 		if err := writeMovieSyncRow(w, i+1, target, status, detail); err != nil {
 			return err
 		}
+		progress(i+1, len(targets))
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -531,16 +541,24 @@ func (d *deps) resolveCollection(ctx context.Context, name string) ([]plex.Item,
 	return items, nil
 }
 
-// newCollectionProgressFunc returns a progress callback that writes per-item
-// processing status to w using carriage returns for in-place updates. A
-// trailing newline is appended when current equals total.
-func newCollectionProgressFunc(w io.Writer) func(current, total int) {
+func newProgressFunc(w io.Writer, label string) func(current, total int) {
 	return func(current, total int) {
-		fmt.Fprintf(w, "\rProcessing collection items: %d/%d", current, total)
+		fmt.Fprintf(w, "\r%s: %d/%d", label, current, total)
 		if current == total {
 			fmt.Fprintln(w)
 		}
 	}
+}
+
+// newCollectionProgressFunc returns a progress callback that writes per-item
+// processing status to w using carriage returns for in-place updates. A
+// trailing newline is appended when current equals total.
+func newCollectionProgressFunc(w io.Writer) func(current, total int) {
+	return newProgressFunc(w, "Processing collection items")
+}
+
+func newSyncProgressFunc(w io.Writer, label string) func(current, total int) {
+	return newProgressFunc(w, label)
 }
 
 func (d *deps) validateTVCheckConfig() error {
