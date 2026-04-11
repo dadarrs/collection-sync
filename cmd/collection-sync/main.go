@@ -531,6 +531,9 @@ func (d *deps) resolveCollection(ctx context.Context, name string) ([]plex.Item,
 	return items, nil
 }
 
+// newCollectionProgressFunc returns a progress callback that writes per-item
+// processing status to w using carriage returns for in-place updates. A
+// trailing newline is appended when current equals total.
 func newCollectionProgressFunc(w io.Writer) func(current, total int) {
 	return func(current, total int) {
 		fmt.Fprintf(w, "\rProcessing collection items: %d/%d", current, total)
