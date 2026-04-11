@@ -5,7 +5,6 @@
     "bump-patch-for-minor-pre-major": true,
     "packages": {
         ".": {
-            "release-as": "0.1.0",
             "changelog-sections": [
                 {
                     "type": "feat",
