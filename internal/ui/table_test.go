@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -200,10 +201,10 @@ func TestAddRowNormalizesColumnCount(t *testing.T) {
 	tbl.AddRow("1", "Movie")
 	tbl.AddRow("2", "Movie 2", "added", "ignored")
 
-	if got, want := tbl.rows[0], []string{"1", "Movie", ""}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	if got, want := tbl.rows[0], []string{"1", "Movie", ""}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("AddRow(short) = %#v, want %#v", got, want)
 	}
-	if got, want := tbl.rows[1], []string{"2", "Movie 2", "added"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	if got, want := tbl.rows[1], []string{"2", "Movie 2", "added"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("AddRow(long) = %#v, want %#v", got, want)
 	}
 }
