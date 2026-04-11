@@ -66,6 +66,9 @@ func TestRenderPlainDetailList(t *testing.T) {
 	if strings.Contains(got, "│") {
 		t.Fatalf("renderPlain() unexpectedly rendered border glyphs: %q", got)
 	}
+	if strings.Contains(got, "─") {
+		t.Fatalf("renderPlain() unexpectedly rendered unicode separators: %q", got)
+	}
 }
 
 func TestTableHelperLookups(t *testing.T) {
@@ -187,5 +190,35 @@ func TestRenderAndNewTable(t *testing.T) {
 	}
 	if got := styled.Render(); !strings.Contains(got, "TITLE") || !strings.Contains(got, "Movie") {
 		t.Fatalf("styled Render() = %q", got)
+	}
+}
+
+func TestAddRowNormalizesColumnCount(t *testing.T) {
+	r := &Renderer{tty: false, theme: PlainTheme()}
+	tbl := r.NewTable([]string{"#", "TITLE", "STATUS"}, 2)
+
+	tbl.AddRow("1", "Movie")
+	tbl.AddRow("2", "Movie 2", "added", "ignored")
+
+	if got, want := tbl.rows[0], []string{"1", "Movie", ""}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("AddRow(short) = %#v, want %#v", got, want)
+	}
+	if got, want := tbl.rows[1], []string{"2", "Movie 2", "added"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("AddRow(long) = %#v, want %#v", got, want)
+	}
+}
+
+func TestRenderStyledHandlesShortRows(t *testing.T) {
+	tbl := &Table{
+		headers:   []string{"#", "TITLE", "STATUS"},
+		rows:      [][]string{{"1", "Movie"}, {"2", "Movie 2", "failed"}},
+		theme:     DefaultTheme(),
+		tty:       true,
+		width:     60,
+		statusCol: 2,
+	}
+
+	if got := tbl.Render(); !strings.Contains(got, "Movie") || !strings.Contains(got, "Movie 2") {
+		t.Fatalf("Render() = %q", got)
 	}
 }

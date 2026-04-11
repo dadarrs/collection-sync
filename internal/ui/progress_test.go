@@ -15,13 +15,13 @@ func TestNewProgressAndUpdatePlain(t *testing.T) {
 	}
 
 	p.Update(1)
-	if got := buf.String(); got != "\rProcessing: 1/3" {
+	if got := buf.String(); got != "Processing: 1/3\n" {
 		t.Fatalf("Update(1) = %q", got)
 	}
 
 	buf.Reset()
 	p.Update(3)
-	if got := buf.String(); got != "\rProcessing: 3/3\n" {
+	if got := buf.String(); got != "Processing: 3/3\n" {
 		t.Fatalf("Update(3) = %q", got)
 	}
 }

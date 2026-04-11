@@ -40,8 +40,9 @@ func (r *Renderer) NewProgress(w io.Writer, label string, total int) *Progress {
 	}
 }
 
-// Update renders the progress bar at current/total. When current == total
-// it writes a final newline.
+// Update renders the progress bar at current/total. TTY output updates in
+// place and writes a final newline on completion; non-TTY output is emitted
+// as newline-delimited progress updates.
 func (p *Progress) Update(current int) {
 	if p.total == 0 {
 		return
@@ -51,12 +52,13 @@ func (p *Progress) Update(current int) {
 		bar := p.model.ViewAs(pct)
 		// Use carriage return for in-place update, clear the line first.
 		fmt.Fprintf(p.w, "\r%s %s %d/%d", p.label, bar, current, p.total)
-	} else {
-		fmt.Fprintf(p.w, "\r%s: %d/%d", p.label, current, p.total)
+		if current == p.total {
+			fmt.Fprintln(p.w)
+		}
+		return
 	}
-	if current == p.total {
-		fmt.Fprintln(p.w)
-	}
+
+	fmt.Fprintf(p.w, "%s: %d/%d\n", p.label, current, p.total)
 }
 
 // StatusSummary renders a list of status counts using themed colors.

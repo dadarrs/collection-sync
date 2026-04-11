@@ -34,7 +34,7 @@ func (r *Renderer) NewTable(headers []string, statusCol int) *Table {
 
 // AddRow appends a data row.
 func (t *Table) AddRow(values ...string) {
-	t.rows = append(t.rows, values)
+	t.rows = append(t.rows, t.normalizeRow(values))
 }
 
 // Render returns the fully rendered table string.
@@ -52,6 +52,7 @@ func (t *Table) renderStyled() string {
 
 	theme := t.theme
 	statusCol := t.statusCol
+	rows := t.normalizedRows()
 
 	tbl := table.New().
 		Border(lipgloss.NormalBorder()).
@@ -65,16 +66,17 @@ func (t *Table) renderStyled() string {
 		BorderStyle(theme.BorderStyle).
 		BaseStyle(theme.CellStyle.PaddingRight(2)).
 		Headers(t.headers...).
-		Rows(t.rows...).
+		Rows(rows...).
 		Wrap(true).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {
 				return theme.HeaderStyle
 			}
 			// Apply status color to the status column.
-			if statusCol >= 0 && col == statusCol && row >= 0 && row < len(t.rows) {
-				val := t.rows[row][col]
-				return theme.StatusStyle(val)
+			if statusCol >= 0 && col == statusCol && row >= 0 && row < len(rows) {
+				if val, ok := t.rowValue(rows[row], col); ok {
+					return theme.StatusStyle(val)
+				}
 			}
 			if row%2 == 0 {
 				return theme.EvenRow
@@ -91,16 +93,21 @@ func (t *Table) renderStyled() string {
 func (t *Table) renderDetailList(detailCol int) string {
 	visibleCols := t.visibleColumns(detailCol)
 	widths := t.columnWidths(visibleCols)
+	rows := t.normalizedRows()
 	var out strings.Builder
 
 	out.WriteString(t.renderDetailHeaders(visibleCols, widths))
 	out.WriteByte('\n')
-	out.WriteString(t.theme.BorderStyle.Render(strings.Repeat("─", t.visibleLineWidth(widths))))
+	separator := "─"
+	if !t.tty {
+		separator = "-"
+	}
+	out.WriteString(t.theme.BorderStyle.Render(strings.Repeat(separator, t.visibleLineWidth(widths))))
 	out.WriteByte('\n')
 
-	for rowIndex, row := range t.rows {
+	for rowIndex, row := range rows {
 		out.WriteString(t.renderDetailRow(rowIndex, row, visibleCols, widths, detailCol))
-		if rowIndex < len(t.rows)-1 {
+		if rowIndex < len(rows)-1 {
 			out.WriteString("\n\n")
 		}
 	}
@@ -129,15 +136,17 @@ func (t *Table) renderDetailHeaders(visibleCols, widths []int) string {
 func (t *Table) renderDetailRow(rowIndex int, row []string, visibleCols, widths []int, detailCol int) string {
 	var out strings.Builder
 	out.WriteString(t.renderVisibleCells(rowIndex, row, visibleCols, widths))
-	out.WriteString(t.renderDetailLines(strings.TrimSpace(row[detailCol])))
+	detail, _ := t.rowValue(row, detailCol)
+	out.WriteString(t.renderDetailLines(strings.TrimSpace(detail)))
 	return out.String()
 }
 
 func (t *Table) renderVisibleCells(rowIndex int, row []string, visibleCols, widths []int) string {
 	parts := make([]string, 0, len(visibleCols))
 	for i, col := range visibleCols {
-		cell := padRight(row[col], widths[i])
-		style := t.rowStyle(rowIndex, col, row[col])
+		value, _ := t.rowValue(row, col)
+		cell := padRight(value, widths[i])
+		style := t.rowStyle(rowIndex, col, value)
 		parts = append(parts, style.Render(cell))
 	}
 	return strings.Join(parts, "  ")
@@ -190,7 +199,9 @@ func (t *Table) columnWidths(cols []int) []int {
 	for i, col := range cols {
 		widths[i] = minInt(maxInt(lipgloss.Width(t.headers[col]), 1), columnCap(t.headers[col]))
 		for _, row := range t.rows {
-			widths[i] = minInt(maxInt(widths[i], lipgloss.Width(row[col])), columnCap(t.headers[col]))
+			if value, ok := t.rowValue(row, col); ok {
+				widths[i] = minInt(maxInt(widths[i], lipgloss.Width(value)), columnCap(t.headers[col]))
+			}
 		}
 	}
 	return widths
@@ -230,7 +241,7 @@ func (t *Table) renderPlain() string {
 		Border(lipgloss.HiddenBorder()).
 		Wrap(true).
 		Headers(t.headers...).
-		Rows(t.rows...)
+		Rows(t.normalizedRows()...)
 
 	if t.width > 0 {
 		tbl.Width(t.width)
@@ -242,6 +253,27 @@ func (t *Table) renderPlain() string {
 // FormatInt converts an int64 to a string for table cells.
 func FormatInt(v int64) string {
 	return fmt.Sprintf("%d", v)
+}
+
+func (t *Table) normalizeRow(values []string) []string {
+	row := make([]string, len(t.headers))
+	copy(row, values)
+	return row
+}
+
+func (t *Table) normalizedRows() [][]string {
+	rows := make([][]string, len(t.rows))
+	for i, row := range t.rows {
+		rows[i] = t.normalizeRow(row)
+	}
+	return rows
+}
+
+func (t *Table) rowValue(row []string, col int) (string, bool) {
+	if col < 0 || col >= len(row) {
+		return "", false
+	}
+	return row[col], true
 }
 
 func columnCap(header string) int {
