@@ -37,8 +37,14 @@ func TestProgressUpdateTTYAndZeroTotal(t *testing.T) {
 
 	buf.Reset()
 	p.Update(4)
-	if got := buf.String(); !strings.Contains(got, "Processing") || !strings.Contains(got, "4/4") || !strings.HasPrefix(got, "\r") || !strings.HasSuffix(got, "\n") {
-		t.Fatalf("TTY Update(complete) = %q", got)
+	if got := buf.String(); !strings.Contains(got, "Processing") {
+		t.Fatalf("TTY Update(complete) missing label: %q", got)
+	} else if !strings.Contains(got, "4/4") {
+		t.Fatalf("TTY Update(complete) missing completion count: %q", got)
+	} else if !strings.HasPrefix(got, "\r") {
+		t.Fatalf("TTY Update(complete) missing carriage return prefix: %q", got)
+	} else if !strings.HasSuffix(got, "\n") {
+		t.Fatalf("TTY Update(complete) missing trailing newline: %q", got)
 	}
 
 	buf.Reset()

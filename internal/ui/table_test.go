@@ -68,7 +68,7 @@ func TestRenderPlainDetailList(t *testing.T) {
 		t.Fatalf("renderPlain() unexpectedly rendered border glyphs: %q", got)
 	}
 	if strings.Contains(got, "─") {
-		t.Fatalf("renderPlain() unexpectedly rendered unicode separators: %q", got)
+		t.Fatalf("renderPlain() unexpectedly rendered Unicode separators: %q", got)
 	}
 }
 
