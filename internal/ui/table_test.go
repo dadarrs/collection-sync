@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+const (
+	movie2Title = "Movie 2"
+	detailText  = "detail text"
+	otherDetail = "other detail"
+)
+
 func TestRenderDetailList(t *testing.T) {
 	tbl := &Table{
 		headers:   []string{"#", "TITLE", "TMDB", "STATUS", "DETAIL"},
@@ -62,10 +68,10 @@ func TestRenderPlainDetailList(t *testing.T) {
 	}
 }
 
-func TestTableHelpers(t *testing.T) {
+func TestTableHelperLookups(t *testing.T) {
 	tbl := &Table{
 		headers:   []string{"#", "TITLE", "STATUS", "DETAIL"},
-		rows:      [][]string{{"1", "Movie", "added", "detail text"}, {"2", "Movie 2", "failed", "other detail"}},
+		rows:      [][]string{{"1", "Movie", "added", detailText}, {"2", movie2Title, "failed", otherDetail}},
 		theme:     DefaultTheme(),
 		tty:       true,
 		width:     80,
@@ -77,6 +83,17 @@ func TestTableHelpers(t *testing.T) {
 	}
 	if got := tbl.columnIndex("MISSING"); got != -1 {
 		t.Fatalf("columnIndex(MISSING) = %d, want -1", got)
+	}
+}
+
+func TestTableHelperWidths(t *testing.T) {
+	tbl := &Table{
+		headers:   []string{"#", "TITLE", "STATUS", "DETAIL"},
+		rows:      [][]string{{"1", "Movie", "added", detailText}, {"2", movie2Title, "failed", otherDetail}},
+		theme:     DefaultTheme(),
+		tty:       true,
+		width:     80,
+		statusCol: 2,
 	}
 
 	widths := tbl.columnWidths([]int{0, 1, 2})
@@ -96,11 +113,22 @@ func TestTableHelpers(t *testing.T) {
 	if got := tbl.visibleLineWidth([]int{3, 10, 8}); got != 25 {
 		t.Fatalf("visibleLineWidth() = %d, want 25", got)
 	}
+}
+
+func TestTableHelperStylesAndFormatting(t *testing.T) {
+	tbl := &Table{
+		headers:   []string{"#", "TITLE", "STATUS", "DETAIL"},
+		rows:      [][]string{{"1", "Movie", "added", detailText}, {"2", movie2Title, "failed", otherDetail}},
+		theme:     DefaultTheme(),
+		tty:       true,
+		width:     80,
+		statusCol: 2,
+	}
 
 	if got := tbl.rowStyle(0, 2, "added").Render("added"); got == "" {
 		t.Fatal("rowStyle(status) rendered empty string")
 	}
-	if got := tbl.rowStyle(1, 1, "Movie 2").Render("Movie 2"); got == "" {
+	if got := tbl.rowStyle(1, 1, movie2Title).Render(movie2Title); got == "" {
 		t.Fatal("rowStyle(odd row) rendered empty string")
 	}
 
@@ -113,23 +141,26 @@ func TestTableHelpers(t *testing.T) {
 	if got := padRight("abcdef", 3); got != "abcdef" {
 		t.Fatalf("padRight(no pad) = %q", got)
 	}
+}
 
+func TestWrapWords(t *testing.T) {
 	if got := wrapWords("short text", 20); len(got) != 1 || got[0] != "short text" {
 		t.Fatalf("wrapWords(short) = %v", got)
 	}
-	wrapped := wrapWords("this is a somewhat longer line", 10)
-	if len(wrapped) < 2 {
+	if wrapped := wrapWords("this is a somewhat longer line", 10); len(wrapped) < 2 {
 		t.Fatalf("wrapWords(long) = %v, want multiple lines", wrapped)
 	}
 	if got := wrapWords("", 10); len(got) != 1 || got[0] != "" {
 		t.Fatalf("wrapWords(empty) = %v", got)
 	}
+}
 
+func TestTableNumericHelpers(t *testing.T) {
 	if got := minInt(1, 2); got != 1 {
 		t.Fatalf("minInt() = %d, want 1", got)
 	}
-	if got := maxInt(1, 2); got != 2 {
-		t.Fatalf("maxInt() = %d, want 2", got)
+	if maxValue := maxInt(1, 2); maxValue != 2 {
+		t.Fatalf("maxInt() = %d, want 2", maxValue)
 	}
 	if got := columnCap("TITLE"); got != 28 {
 		t.Fatalf("columnCap(TITLE) = %d, want 28", got)

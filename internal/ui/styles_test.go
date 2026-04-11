@@ -23,7 +23,7 @@ func TestDefaultThemeStatusStyleMappings(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := theme.StatusStyle(tc.status).Render(tc.want); got == "" {
+		if theme.StatusStyle(tc.status).Render(tc.want) == "" {
 			t.Fatalf("StatusStyle(%q) rendered empty string", tc.status)
 		}
 	}

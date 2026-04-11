@@ -89,53 +89,78 @@ func (t *Table) renderStyled() string {
 }
 
 func (t *Table) renderDetailList(detailCol int) string {
+	visibleCols := t.visibleColumns(detailCol)
+	widths := t.columnWidths(visibleCols)
+	var out strings.Builder
+
+	out.WriteString(t.renderDetailHeaders(visibleCols, widths))
+	out.WriteByte('\n')
+	out.WriteString(t.theme.BorderStyle.Render(strings.Repeat("─", t.visibleLineWidth(widths))))
+	out.WriteByte('\n')
+
+	for rowIndex, row := range t.rows {
+		out.WriteString(t.renderDetailRow(rowIndex, row, visibleCols, widths, detailCol))
+		if rowIndex < len(t.rows)-1 {
+			out.WriteString("\n\n")
+		}
+	}
+
+	return out.String()
+}
+
+func (t *Table) visibleColumns(detailCol int) []int {
 	visibleCols := make([]int, 0, len(t.headers)-1)
 	for i := range t.headers {
 		if i != detailCol {
 			visibleCols = append(visibleCols, i)
 		}
 	}
+	return visibleCols
+}
 
-	widths := t.columnWidths(visibleCols)
-	var out strings.Builder
-
+func (t *Table) renderDetailHeaders(visibleCols, widths []int) string {
 	headers := make([]string, 0, len(visibleCols))
 	for i, col := range visibleCols {
 		headers = append(headers, t.theme.HeaderStyle.Render(padRight(t.headers[col], widths[i])))
 	}
-	out.WriteString(strings.Join(headers, "  "))
-	out.WriteByte('\n')
-	out.WriteString(t.theme.BorderStyle.Render(strings.Repeat("─", t.visibleLineWidth(widths))))
-	out.WriteByte('\n')
+	return strings.Join(headers, "  ")
+}
 
-	for rowIndex, row := range t.rows {
-		parts := make([]string, 0, len(visibleCols))
-		for i, col := range visibleCols {
-			cell := padRight(row[col], widths[i])
-			style := t.rowStyle(rowIndex, col, row[col])
-			parts = append(parts, style.Render(cell))
-		}
-		out.WriteString(strings.Join(parts, "  "))
+func (t *Table) renderDetailRow(rowIndex int, row []string, visibleCols, widths []int, detailCol int) string {
+	var out strings.Builder
+	out.WriteString(t.renderVisibleCells(rowIndex, row, visibleCols, widths))
+	out.WriteString(t.renderDetailLines(strings.TrimSpace(row[detailCol])))
+	return out.String()
+}
 
-		detail := strings.TrimSpace(row[detailCol])
-		if detail != "" {
-			prefix := t.theme.Dim.Render("    detail: ")
-			continuation := t.theme.Dim.Render("            ")
-			lines := wrapDetail(detail, t.detailWidth(len("    detail: ")))
-			for lineIndex, line := range lines {
-				out.WriteByte('\n')
-				if lineIndex == 0 {
-					out.WriteString(prefix)
-				} else {
-					out.WriteString(continuation)
-				}
-				out.WriteString(t.theme.Dim.Render(line))
-			}
-		}
+func (t *Table) renderVisibleCells(rowIndex int, row []string, visibleCols, widths []int) string {
+	parts := make([]string, 0, len(visibleCols))
+	for i, col := range visibleCols {
+		cell := padRight(row[col], widths[i])
+		style := t.rowStyle(rowIndex, col, row[col])
+		parts = append(parts, style.Render(cell))
+	}
+	return strings.Join(parts, "  ")
+}
 
-		if rowIndex < len(t.rows)-1 {
-			out.WriteString("\n\n")
+func (t *Table) renderDetailLines(detail string) string {
+	if detail == "" {
+		return ""
+	}
+
+	prefix := t.theme.Dim.Render("    detail: ")
+	continuation := t.theme.Dim.Render("            ")
+	lines := wrapDetail(detail, t.detailWidth(len("    detail: ")))
+
+	var out strings.Builder
+	for lineIndex, line := range lines {
+		out.WriteByte('\n')
+		if lineIndex == 0 {
+			out.WriteString(prefix)
+		} else {
+			out.WriteString(continuation)
 		}
+		out.WriteString(t.theme.Dim.Render(line))
 	}
 
 	return out.String()
