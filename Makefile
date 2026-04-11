@@ -10,6 +10,7 @@ IMAGE ?= collection-sync
 ENV_FILE ?= .env
 ARGS ?= run --dry-run
 GOLANGCI_LINT_VERSION ?= v2.11.4
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 .PHONY: help build test test-cover test-cover-html test-cover-check lint lint-install fmt tidy run docker-build docker-run clean
 
@@ -17,7 +18,7 @@ help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_.-]+:.*## / {printf "%-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build: ## Build the collection-sync binary
-	$(GO) build -v -o $(BINARY) $(PACKAGE)
+	$(GO) build -v -ldflags="-X main.version=$(VERSION)" -o $(BINARY) $(PACKAGE)
 
 test: ## Run the Go test suite
 	$(GO) test -v ./...
