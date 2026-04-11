@@ -255,12 +255,15 @@ func FormatInt(v int64) string {
 	return fmt.Sprintf("%d", v)
 }
 
+// normalizeRow pads or truncates a row so it matches the header column count.
+// Missing cells are filled with empty strings.
 func (t *Table) normalizeRow(values []string) []string {
 	row := make([]string, len(t.headers))
 	copy(row, values)
 	return row
 }
 
+// normalizedRows returns a copy of all rows normalized to the header width.
 func (t *Table) normalizedRows() [][]string {
 	rows := make([][]string, len(t.rows))
 	for i, row := range t.rows {
@@ -269,6 +272,8 @@ func (t *Table) normalizedRows() [][]string {
 	return rows
 }
 
+// rowValue safely returns the value at col when present, or ("", false) when
+// the column index is out of bounds for the provided row.
 func (t *Table) rowValue(row []string, col int) (string, bool) {
 	if col < 0 || col >= len(row) {
 		return "", false
