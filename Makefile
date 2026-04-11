@@ -10,6 +10,9 @@ IMAGE ?= collection-sync
 ENV_FILE ?= .env
 ARGS ?= run --dry-run
 GOLANGCI_LINT_VERSION ?= v2.11.4
+GIT_TAG ?= $(shell git describe --exact-match --tags --match 'v*' 2>/dev/null)
+GIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+VERSION ?= $(if $(GIT_TAG),$(patsubst v%,%,$(GIT_TAG)),dev-$(GIT_SHA))
 
 .PHONY: help build test test-cover test-cover-html test-cover-check lint lint-install fmt tidy run docker-build docker-run clean
 
@@ -17,7 +20,7 @@ help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_.-]+:.*## / {printf "%-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build: ## Build the collection-sync binary
-	$(GO) build -v -o $(BINARY) $(PACKAGE)
+	$(GO) build -v -ldflags="-X main.version=$(VERSION)" -o $(BINARY) $(PACKAGE)
 
 test: ## Run the Go test suite
 	$(GO) test -v ./...
@@ -50,7 +53,7 @@ run: ## Run from source; override ARGS to pass CLI arguments
 	$(GO) run $(PACKAGE) $(ARGS)
 
 docker-build: ## Build the Docker image
-	$(DOCKER) build -t $(IMAGE) .
+	$(DOCKER) build --build-arg VERSION=$(VERSION) -t $(IMAGE) .
 
 docker-run: docker-build ## Run the Docker image with ENV_FILE and ARGS overrides
 	$(DOCKER) run --rm --env-file $(ENV_FILE) $(IMAGE) $(ARGS)

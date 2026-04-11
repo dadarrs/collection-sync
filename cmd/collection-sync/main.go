@@ -24,6 +24,9 @@ import (
 	"github.com/dadarrs/collection-sync/internal/sonarr"
 )
 
+// version is set at build time via -ldflags "-X main.version=..."
+var version = "dev"
+
 const (
 	statusCountFormat   = "%s: %d\n"
 	totalMoviesFormat   = "\nTotal: %d movies\n"
@@ -42,9 +45,10 @@ const (
 )
 
 type CLI struct {
-	Run    RunCmd    `cmd:"" help:"Sync TV and movie collections. Repeats on INTERVAL if set."`
-	TV     TVCmd     `cmd:"" help:"TV show and season operations."`
-	Movies MoviesCmd `cmd:"" help:"Movie operations."`
+	Run     RunCmd           `cmd:"" help:"Sync TV and movie collections. Repeats on INTERVAL if set."`
+	TV      TVCmd            `cmd:"" help:"TV show and season operations."`
+	Movies  MoviesCmd        `cmd:"" help:"Movie operations."`
+	Version kong.VersionFlag `name:"version" short:"v" help:"Print version and exit."`
 }
 
 type TVCmd struct {
@@ -1236,6 +1240,7 @@ func main() {
 		kong.Description("Bridge between Plex collections and *arr apps."),
 		kong.UsageOnError(),
 		kong.Bind(appDeps),
+		kong.Vars{"version": version},
 	)
 	if err := ctx.Run(appDeps); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

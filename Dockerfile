@@ -6,6 +6,7 @@ WORKDIR /src
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -16,10 +17,10 @@ COPY internal ./internal
 RUN export GOOS="${TARGETOS:-$(go env GOOS)}" && \
     export GOARCH="${TARGETARCH:-$(go env GOARCH)}" && \
     CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build \
-        -trimpath \
-        -ldflags="-s -w" \
-        -o /collection-sync \
-        ./cmd/collection-sync
+    -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /collection-sync \
+    ./cmd/collection-sync
 
 FROM scratch
 
