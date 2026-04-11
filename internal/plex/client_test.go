@@ -371,6 +371,44 @@ func TestGetCollectionItemsParsesMixedItemsWithFallbackMetadata(t *testing.T) {
 	}
 }
 
+func TestGetCollectionItemsCallsOnProgress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/library/collections/" + testCollectionKey + "/items":
+			_, _ = w.Write([]byte(`{"MediaContainer":{"Metadata":[
+				{"ratingKey":"movie-1","title":"Movie One","type":"movie","Guid":[{"id":"tmdb://101"}]},
+				{"ratingKey":"movie-2","title":"Movie Two","type":"movie","Guid":[{"id":"tmdb://102"}]}
+			]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	var progressCalls []struct{ current, total int }
+	client := &Client{serverURL: server.URL, token: "token", doer: server.Client()}
+	client.OnProgress = func(current, total int) {
+		progressCalls = append(progressCalls, struct{ current, total int }{current, total})
+	}
+
+	items, err := client.GetCollectionItems(context.Background(), testCollectionKey)
+	if err != nil {
+		t.Fatalf("GetCollectionItems() error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(GetCollectionItems()) = %d, want 2", len(items))
+	}
+	if len(progressCalls) != 2 {
+		t.Fatalf("progress callback count = %d, want 2", len(progressCalls))
+	}
+	if progressCalls[0].current != 1 || progressCalls[0].total != 2 {
+		t.Fatalf("progress[0] = %+v, want {1, 2}", progressCalls[0])
+	}
+	if progressCalls[1].current != 2 || progressCalls[1].total != 2 {
+		t.Fatalf("progress[1] = %+v, want {2, 2}", progressCalls[1])
+	}
+}
+
 func TestGetCollectionItemsNon200Response(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "bad", http.StatusBadGateway)

@@ -266,6 +266,42 @@ func TestDepsValidationAndCollectionResolution(t *testing.T) {
 	}
 }
 
+func TestResolveCollectionPrintsProgress(t *testing.T) {
+	d, out, _ := newTestDeps(baseConfig())
+	d.plex = fakePlexService{
+		findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+		getCollectionItems:   func(context.Context, string) ([]plexpkg.Item, error) { return []plexpkg.Item{{Title: "Movie"}}, nil },
+	}
+	items, err := d.resolveCollection(context.Background(), "Movies")
+	if err != nil || len(items) != 1 {
+		t.Fatalf("resolveCollection() = (%+v, %v)", items, err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `Finding collection "Movies"`) {
+		t.Fatalf("resolveCollection() output missing finding message: %q", got)
+	}
+	if !strings.Contains(got, `Fetching items for "Movies"`) {
+		t.Fatalf("resolveCollection() output missing fetching message: %q", got)
+	}
+	if !strings.Contains(got, `Loaded 1 items from "Movies"`) {
+		t.Fatalf("resolveCollection() output missing loaded message: %q", got)
+	}
+}
+
+func TestNewCollectionProgressFunc(t *testing.T) {
+	var buf bytes.Buffer
+	progress := newCollectionProgressFunc(&buf)
+	progress(1, 3)
+	if got := buf.String(); got != "\rProcessing collection items: 1/3" {
+		t.Fatalf("progress(1,3) = %q", got)
+	}
+	buf.Reset()
+	progress(3, 3)
+	if got := buf.String(); got != "\rProcessing collection items: 3/3\n" {
+		t.Fatalf("progress(3,3) = %q", got)
+	}
+}
+
 func TestLookupCaches(t *testing.T) {
 	t.Run("tv lookup caches found and not found", func(t *testing.T) {
 		count := 0

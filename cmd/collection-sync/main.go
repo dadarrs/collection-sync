@@ -517,15 +517,27 @@ func (d *deps) processMovieSyncTarget(ctx context.Context, lookupCache map[strin
 }
 
 func (d *deps) resolveCollection(ctx context.Context, name string) ([]plex.Item, error) {
+	d.printf("Finding collection %q...\n", name)
 	ratingKey, err := d.plex.FindCollectionByName(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("finding collection %q: %w", name, err)
 	}
+	d.printf("Fetching items for %q...\n", name)
 	items, err := d.plex.GetCollectionItems(ctx, ratingKey)
 	if err != nil {
 		return nil, fmt.Errorf("getting items for %q: %w", name, err)
 	}
+	d.printf("Loaded %d items from %q\n", len(items), name)
 	return items, nil
+}
+
+func newCollectionProgressFunc(w io.Writer) func(current, total int) {
+	return func(current, total int) {
+		fmt.Fprintf(w, "\rProcessing collection items: %d/%d", current, total)
+		if current == total {
+			fmt.Fprintln(w)
+		}
+	}
 }
 
 func (d *deps) validateTVCheckConfig() error {
@@ -1227,9 +1239,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	plexClient := plex.New(cfg.PlexURL, cfg.PlexToken)
+	plexClient.OnProgress = newCollectionProgressFunc(os.Stderr)
 	appDeps := &deps{
 		cfg:    cfg,
-		plex:   plex.New(cfg.PlexURL, cfg.PlexToken),
+		plex:   plexClient,
 		radarr: radarr.New(cfg.RadarrURL, cfg.RadarrAPIKey),
 		sonarr: sonarr.New(cfg.SonarrURL, cfg.SonarrAPIKey),
 	}

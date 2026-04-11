@@ -32,9 +32,10 @@ type Item struct {
 
 // Client wraps Plex Media Server API calls for the operations needed by this service.
 type Client struct {
-	serverURL string
-	token     string
-	doer      httpDoer
+	serverURL  string
+	token      string
+	doer       httpDoer
+	OnProgress func(current, total int)
 }
 
 type httpDoer interface {
@@ -281,11 +282,15 @@ func (c *Client) GetCollectionItems(ctx context.Context, collectionKey string) (
 	}
 
 	parentIDs := make(map[string]externalIDs)
+	total := len(body.MediaContainer.Metadata)
 	var items []Item
-	for _, meta := range body.MediaContainer.Metadata {
+	for i, meta := range body.MediaContainer.Metadata {
 		item := c.newCollectionItem(ctx, meta, parentIDs)
 		slog.Debug("collection item", "title", item.Title, "type", item.Type, "tvdb", item.TVDBID, "tmdb", item.TMDBID)
 		items = append(items, item)
+		if c.OnProgress != nil {
+			c.OnProgress(i+1, total)
+		}
 	}
 
 	return items, nil
