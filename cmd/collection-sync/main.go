@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strings"
 	"syscall"
-	"text/tabwriter"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -22,13 +21,13 @@ import (
 	"github.com/dadarrs/collection-sync/internal/plex"
 	"github.com/dadarrs/collection-sync/internal/radarr"
 	"github.com/dadarrs/collection-sync/internal/sonarr"
+	"github.com/dadarrs/collection-sync/internal/ui"
 )
 
 // version is set at build time via -ldflags "-X main.version=..."
 var version = "dev"
 
 const (
-	statusCountFormat   = "%s: %d\n"
 	totalMoviesFormat   = "\nTotal: %d movies\n"
 	statusAdded         = "added"
 	statusExisting      = "existing"
@@ -201,18 +200,11 @@ func (c *ListMoviesCmd) Run(d *deps) error {
 		return err
 	}
 
-	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
-	if err := writef(w, "#\tTITLE\tTMDB\tTVDB\tRATING KEY\n"); err != nil {
-		return err
-	}
+	t := d.ui.NewTable([]string{"#", "TITLE", "TMDB", "TVDB", "RATING KEY"}, -1)
 	for i, item := range items {
-		if err := writef(w, "%d\t%s\t%d\t%d\t%s\n", i+1, item.Title, item.TMDBID, item.TVDBID, item.RatingKey); err != nil {
-			return err
-		}
+		t.AddRow(ui.FormatInt(int64(i+1)), item.Title, ui.FormatInt(item.TMDBID), ui.FormatInt(item.TVDBID), item.RatingKey)
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+	d.println(t.Render())
 	d.printf(totalMoviesFormat, len(items))
 	return nil
 }
@@ -230,10 +222,7 @@ func (c *ListTVCmd) Run(d *deps) error {
 		return err
 	}
 
-	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
-	if err := writef(w, "#\tSHOW\tSEASON\tTYPE\tTMDB\tTVDB\tRATING KEY\n"); err != nil {
-		return err
-	}
+	t := d.ui.NewTable([]string{"#", "SHOW", "SEASON", "TYPE", "TMDB", "TVDB", "RATING KEY"}, -1)
 	for i, item := range items {
 		showTitle := item.ParentTitle
 		if showTitle == "" {
@@ -245,13 +234,9 @@ func (c *ListTVCmd) Run(d *deps) error {
 			seasonLabel = fmt.Sprintf("Season %d", item.Index)
 		}
 
-		if err := writef(w, "%d\t%s\t%s\t%s\t%d\t%d\t%s\n", i+1, showTitle, seasonLabel, item.Type, item.TMDBID, item.TVDBID, item.RatingKey); err != nil {
-			return err
-		}
+		t.AddRow(ui.FormatInt(int64(i+1)), showTitle, seasonLabel, item.Type, ui.FormatInt(item.TMDBID), ui.FormatInt(item.TVDBID), item.RatingKey)
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+	d.println(t.Render())
 	d.printf("\nTotal: %d items\n", len(items))
 	return nil
 }
@@ -284,10 +269,7 @@ func (c *CheckMoviesCmd) Run(d *deps) error {
 	lookupCache := make(map[string]cachedMovieLookup)
 	statusCounts := make(map[string]int)
 
-	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
-	if err := writef(w, "#\tTITLE\tSTATUS\tMATCH\tDETAIL\n"); err != nil {
-		return err
-	}
+	t := d.ui.NewTable([]string{"#", "TITLE", "STATUS", "MATCH", "DETAIL"}, 2)
 	for i, item := range items {
 		lookup, err := d.getCachedMovieLookup(ctx, lookupCache, item.Title, item.TMDBID)
 		if err != nil {
@@ -296,15 +278,11 @@ func (c *CheckMoviesCmd) Run(d *deps) error {
 
 		status, matchBy, detail := evaluateMovieCheck(item, lookup)
 		statusCounts[status]++
-		if err := writef(w, "%d\t%s\t%s\t%s\t%s\n", i+1, item.Title, status, matchBy, detail); err != nil {
-			return err
-		}
+		t.AddRow(ui.FormatInt(int64(i+1)), item.Title, status, matchBy, detail)
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+	d.println(t.Render())
 	d.printf(totalMoviesFormat, len(items))
-	printMovieCheckSummary(d.output(), statusCounts)
+	printMovieCheckSummary(d.output(), d.ui, statusCounts)
 	return nil
 }
 
@@ -322,10 +300,7 @@ func (c *CheckTVCmd) Run(d *deps) error {
 	lookupCache := make(map[string]cachedLookup)
 	statusCounts := make(map[string]int)
 
-	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
-	if err := writef(w, "#\tSHOW\tSEASON\tSTATUS\tMATCH\tDETAIL\n"); err != nil {
-		return err
-	}
+	t := d.ui.NewTable([]string{"#", "SHOW", "SEASON", "STATUS", "MATCH", "DETAIL"}, 3)
 	for i, item := range items {
 		showTitle, seasonLabel, showTVDBID := sonarrLookupTarget(item)
 		lookup, err := d.getCachedLookup(ctx, lookupCache, showTitle, showTVDBID)
@@ -336,15 +311,11 @@ func (c *CheckTVCmd) Run(d *deps) error {
 		status, matchBy, detail := evaluateTVCheck(item, lookup, showTVDBID)
 
 		statusCounts[status]++
-		if err := writef(w, "%d\t%s\t%s\t%s\t%s\t%s\n", i+1, showTitle, seasonLabel, status, matchBy, detail); err != nil {
-			return err
-		}
+		t.AddRow(ui.FormatInt(int64(i+1)), showTitle, seasonLabel, status, matchBy, detail)
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+	d.println(t.Render())
 	d.printf("\nTotal: %d items\n", len(items))
-	printTVCheckSummary(d.output(), statusCounts)
+	printTVCheckSummary(d.output(), d.ui, statusCounts)
 	return nil
 }
 
@@ -370,28 +341,21 @@ func (c *SyncTVCmd) Run(d *deps) error {
 	defaultsResolved := false
 	var errs []error
 
-	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
-	if err := writef(w, "#\tSHOW\tTVDB\tMONITOR\tSTATUS\tDETAIL\n"); err != nil {
-		return err
-	}
-	progress := newSyncProgressFunc(d.errorOutput(), "Processing Sonarr sync targets")
+	t := d.ui.NewTable([]string{"#", "SHOW", "TVDB", "MONITOR", "STATUS", "DETAIL"}, 4)
+	progress := d.ui.NewProgress(d.errorOutput(), "Processing Sonarr sync targets", len(targets))
 	if len(targets) > 0 {
-		progress(0, len(targets))
+		progress.Update(0)
 	}
 	for i, target := range targets {
 		status, detail, syncErr := d.processTVSyncTarget(ctx, lookupCache, target, &defaults, &defaultsResolved, c.DryRun)
 		statusCounts[status]++
 		errs = appendError(errs, syncErr)
-		if err := writeTVSyncRow(w, i+1, target, status, detail); err != nil {
-			return err
-		}
-		progress(i+1, len(targets))
+		t.AddRow(ui.FormatInt(int64(i+1)), target.Title, ui.FormatInt(target.TVDBID), target.monitorDescription(), status, detail)
+		progress.Update(i + 1)
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+	d.println(t.Render())
 	d.printf("\nTotal: %d shows\n", len(targets))
-	printTVSyncSummary(d.output(), statusCounts)
+	printTVSyncSummary(d.output(), d.ui, statusCounts)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -420,28 +384,21 @@ func (c *SyncMoviesCmd) Run(d *deps) error {
 	defaultsResolved := false
 	var errs []error
 
-	w := tabwriter.NewWriter(d.output(), 0, 4, 2, ' ', 0)
-	if err := writef(w, "#\tTITLE\tTMDB\tSTATUS\tDETAIL\n"); err != nil {
-		return err
-	}
-	progress := newSyncProgressFunc(d.errorOutput(), "Processing Radarr sync targets")
+	t := d.ui.NewTable([]string{"#", "TITLE", "TMDB", "STATUS", "DETAIL"}, 3)
+	progress := d.ui.NewProgress(d.errorOutput(), "Processing Radarr sync targets", len(targets))
 	if len(targets) > 0 {
-		progress(0, len(targets))
+		progress.Update(0)
 	}
 	for i, target := range targets {
 		status, detail, syncErr := d.processMovieSyncTarget(ctx, lookupCache, target, &defaults, &defaultsResolved, c.DryRun)
 		statusCounts[status]++
 		errs = appendError(errs, syncErr)
-		if err := writeMovieSyncRow(w, i+1, target, status, detail); err != nil {
-			return err
-		}
-		progress(i+1, len(targets))
+		t.AddRow(ui.FormatInt(int64(i+1)), target.Title, ui.FormatInt(target.TMDBID), status, detail)
+		progress.Update(i + 1)
 	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
+	d.println(t.Render())
 	d.printf(totalMoviesFormat, len(targets))
-	printMovieSyncSummary(d.output(), statusCounts)
+	printMovieSyncSummary(d.output(), d.ui, statusCounts)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -476,6 +433,7 @@ type deps struct {
 	plex   plexService
 	radarr radarrService
 	sonarr sonarrService
+	ui     *ui.Renderer
 	out    io.Writer
 	errOut io.Writer
 }
@@ -541,24 +499,17 @@ func (d *deps) resolveCollection(ctx context.Context, name string) ([]plex.Item,
 	return items, nil
 }
 
-func newProgressFunc(w io.Writer, label string) func(current, total int) {
-	return func(current, total int) {
-		fmt.Fprintf(w, "\r%s: %d/%d", label, current, total)
-		if current == total {
-			fmt.Fprintln(w)
-		}
-	}
-}
-
 // newCollectionProgressFunc returns a progress callback that writes per-item
-// processing status to w using carriage returns for in-place updates. A
-// trailing newline is appended when current equals total.
-func newCollectionProgressFunc(w io.Writer) func(current, total int) {
-	return newProgressFunc(w, "Processing collection items")
-}
-
-func newSyncProgressFunc(w io.Writer, label string) func(current, total int) {
-	return newProgressFunc(w, label)
+// processing status to w using the UI progress bar. A trailing newline is
+// appended when current equals total.
+func newCollectionProgressFunc(r *ui.Renderer, w io.Writer) func(current, total int) {
+	var p *ui.Progress
+	return func(current, total int) {
+		if p == nil {
+			p = r.NewProgress(w, "Processing collection items", total)
+		}
+		p.Update(current)
+	}
 }
 
 func (d *deps) validateTVCheckConfig() error {
@@ -918,36 +869,20 @@ func evaluateSeasonCheck(item plex.Item, match *sonarr.SeriesMatch) (string, str
 	return statusPresent, match.MatchedBy, fmt.Sprintf("season %d is monitored", item.Index)
 }
 
-func printTVCheckSummary(w io.Writer, statusCounts map[string]int) {
-	for _, status := range []string{statusPresent, statusMissingSeries, statusMissingSeason, statusUnmonitored} {
-		if count := statusCounts[status]; count > 0 {
-			_, _ = fmt.Fprintf(w, statusCountFormat, status, count)
-		}
-	}
+func printTVCheckSummary(w io.Writer, r *ui.Renderer, statusCounts map[string]int) {
+	ui.StatusSummary(w, r.Theme(), r.IsTTY(), statusCounts, []string{statusPresent, statusMissingSeries, statusMissingSeason, statusUnmonitored})
 }
 
-func printTVSyncSummary(w io.Writer, statusCounts map[string]int) {
-	for _, status := range []string{statusAdded, statusUpdated, statusWouldAdd, statusWouldUpdate, statusExisting, statusSkipped, statusFailed} {
-		if count := statusCounts[status]; count > 0 {
-			_, _ = fmt.Fprintf(w, statusCountFormat, status, count)
-		}
-	}
+func printTVSyncSummary(w io.Writer, r *ui.Renderer, statusCounts map[string]int) {
+	ui.StatusSummary(w, r.Theme(), r.IsTTY(), statusCounts, []string{statusAdded, statusUpdated, statusWouldAdd, statusWouldUpdate, statusExisting, statusSkipped, statusFailed})
 }
 
-func printMovieSyncSummary(w io.Writer, statusCounts map[string]int) {
-	for _, status := range []string{statusAdded, statusUpdated, statusWouldAdd, statusWouldUpdate, statusExisting, statusSkipped, statusFailed} {
-		if count := statusCounts[status]; count > 0 {
-			_, _ = fmt.Fprintf(w, statusCountFormat, status, count)
-		}
-	}
+func printMovieSyncSummary(w io.Writer, r *ui.Renderer, statusCounts map[string]int) {
+	ui.StatusSummary(w, r.Theme(), r.IsTTY(), statusCounts, []string{statusAdded, statusUpdated, statusWouldAdd, statusWouldUpdate, statusExisting, statusSkipped, statusFailed})
 }
 
-func printMovieCheckSummary(w io.Writer, statusCounts map[string]int) {
-	for _, status := range []string{statusPresent, statusMissingMovie, statusUnmonitored} {
-		if count := statusCounts[status]; count > 0 {
-			_, _ = fmt.Fprintf(w, statusCountFormat, status, count)
-		}
-	}
+func printMovieCheckSummary(w io.Writer, r *ui.Renderer, statusCounts map[string]int) {
+	ui.StatusSummary(w, r.Theme(), r.IsTTY(), statusCounts, []string{statusPresent, statusMissingMovie, statusUnmonitored})
 }
 
 func sonarrLookupKey(showTitle string, showTVDBID int64) string {
@@ -1238,19 +1173,6 @@ func appendError(errs []error, err error) []error {
 	return append(errs, err)
 }
 
-func writeTVSyncRow(w io.Writer, index int, target tvSyncTarget, status, detail string) error {
-	return writef(w, "%d\t%s\t%d\t%s\t%s\t%s\n", index, target.Title, target.TVDBID, target.monitorDescription(), status, detail)
-}
-
-func writeMovieSyncRow(w io.Writer, index int, target movieSyncTarget, status, detail string) error {
-	return writef(w, "%d\t%s\t%d\t%s\t%s\n", index, target.Title, target.TMDBID, status, detail)
-}
-
-func writef(w io.Writer, format string, args ...any) error {
-	_, err := fmt.Fprintf(w, format, args...)
-	return err
-}
-
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
@@ -1260,13 +1182,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	renderer := ui.Stdout()
+
 	plexClient := plex.New(cfg.PlexURL, cfg.PlexToken)
-	plexClient.OnProgress = newCollectionProgressFunc(os.Stderr)
+	plexClient.OnProgress = newCollectionProgressFunc(renderer, os.Stderr)
 	appDeps := &deps{
 		cfg:    cfg,
 		plex:   plexClient,
 		radarr: radarr.New(cfg.RadarrURL, cfg.RadarrAPIKey),
 		sonarr: sonarr.New(cfg.SonarrURL, cfg.SonarrAPIKey),
+		ui:     renderer,
 	}
 
 	var cli CLI
