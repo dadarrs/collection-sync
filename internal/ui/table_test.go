@@ -88,6 +88,16 @@ func TestTableHelperLookups(t *testing.T) {
 	if got := tbl.columnIndex("MISSING"); got != -1 {
 		t.Fatalf("columnIndex(MISSING) = %d, want -1", got)
 	}
+
+	if got, ok := tbl.rowValue(tbl.rows[0], -1); ok || got != "" {
+		t.Fatalf("rowValue(negative) = (%q, %t), want (\"\", false)", got, ok)
+	}
+	if got, ok := tbl.rowValue(tbl.rows[0], len(tbl.rows[0])); ok || got != "" {
+		t.Fatalf("rowValue(out-of-bounds) = (%q, %t), want (\"\", false)", got, ok)
+	}
+	if got, ok := tbl.rowValue(tbl.rows[0], 2); !ok || got != "added" {
+		t.Fatalf("rowValue(valid) = (%q, %t), want (\"added\", true)", got, ok)
+	}
 }
 
 func TestTableHelperWidths(t *testing.T) {

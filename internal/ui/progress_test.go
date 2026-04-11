@@ -36,6 +36,12 @@ func TestProgressUpdateTTYAndZeroTotal(t *testing.T) {
 	}
 
 	buf.Reset()
+	p.Update(4)
+	if got := buf.String(); !strings.Contains(got, "Processing") || !strings.Contains(got, "4/4") || !strings.HasPrefix(got, "\r") || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("TTY Update(complete) = %q", got)
+	}
+
+	buf.Reset()
 	zero := &Progress{w: &buf, label: "noop", total: 0, tty: false}
 	zero.Update(0)
 	if got := buf.String(); got != "" {
