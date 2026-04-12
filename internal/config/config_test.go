@@ -44,6 +44,7 @@ func TestLoadUsesQuotedRuntimeEnv(t *testing.T) {
 		"SEARCH_ADDED",
 		"SEARCH_EXISTING",
 		"INTERVAL",
+		"MAX_ITEMS_PROCESSED_PER_RUN",
 	)
 
 	cfg, err := Load()
@@ -56,6 +57,9 @@ func TestLoadUsesQuotedRuntimeEnv(t *testing.T) {
 	}
 	if cfg.MovieCollectionName != "To Be Removed From Library" {
 		t.Fatalf("MovieCollectionName = %q", cfg.MovieCollectionName)
+	}
+	if cfg.MaxItemsProcessedPerRun != defaultMaxItemsProcessedPerRun {
+		t.Fatalf("MaxItemsProcessedPerRun = %d, want %d", cfg.MaxItemsProcessedPerRun, defaultMaxItemsProcessedPerRun)
 	}
 }
 

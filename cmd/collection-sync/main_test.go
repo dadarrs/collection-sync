@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -884,6 +885,73 @@ func TestSyncAllAndProcessHelpers(t *testing.T) {
 	})
 }
 
+func TestLimitSyncTargets(t *testing.T) {
+	t.Run("limits targets when syncing full collection", func(t *testing.T) {
+		targets := []movieSyncTarget{{Title: "A"}, {Title: "B"}, {Title: "C"}}
+		limited := limitSyncTargets(targets, nil, 2)
+		if len(limited) != 2 || limited[0].Title != "A" || limited[1].Title != "B" {
+			t.Fatalf("limitSyncTargets() = %#v", limited)
+		}
+	})
+
+	t.Run("does not limit single row sync", func(t *testing.T) {
+		row := 2
+		targets := []movieSyncTarget{{Title: "A"}, {Title: "B"}, {Title: "C"}}
+		limited := limitSyncTargets(targets, &row, 1)
+		if len(limited) != 3 {
+			t.Fatalf("limitSyncTargets() len = %d, want 3", len(limited))
+		}
+	})
+}
+
+func TestSyncMoviesCmdAppliesMaxItemsProcessedPerRun(t *testing.T) {
+	cfg := baseConfig()
+	cfg.MaxItemsProcessedPerRun = 2
+	d, out, errOut := newTestDeps(cfg)
+
+	d.plex = fakePlexService{
+		findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+		getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+			return []plexpkg.Item{
+				{Title: "Alpha", TMDBID: 1},
+				{Title: "Bravo", TMDBID: 2},
+				{Title: "Charlie", TMDBID: 3},
+			}, nil
+		},
+	}
+
+	var lookedUp []string
+	d.radarr = fakeRadarrService{
+		findMovie: func(_ context.Context, title string, tmdbID int64) (*radarrpkg.MovieMatch, error) {
+			lookedUp = append(lookedUp, fmt.Sprintf("%s:%d", title, tmdbID))
+			return nil, radarrpkg.ErrMovieNotFound
+		},
+		resolveAddMovieDefaults: func(context.Context, string, string) (radarrpkg.AddMovieDefaults, error) {
+			return radarrpkg.AddMovieDefaults{RootFolderPath: testMoviesRootPath, QualityProfileID: 7, QualityProfileName: "HD"}, nil
+		},
+		previewCreateMovie: func(_ context.Context, request radarrpkg.CreateMovieRequest, _ radarrpkg.AddMovieDefaults) (string, error) {
+			return request.Title, nil
+		},
+	}
+
+	if err := (&SyncMoviesCmd{DryRun: true}).Run(d); err != nil {
+		t.Fatalf("SyncMoviesCmd.Run() error = %v", err)
+	}
+
+	if got := strings.Join(lookedUp, ","); got != "Alpha:1,Bravo:2" {
+		t.Fatalf("findMovie calls = %q, want first two targets only", got)
+	}
+	if strings.Contains(out.String(), "Charlie") {
+		t.Fatalf("SyncMoviesCmd output = %q, want limited targets only", out.String())
+	}
+	if !strings.Contains(out.String(), "Loaded 3 items") || !strings.Contains(out.String(), "Total: 2 movies") {
+		t.Fatalf("SyncMoviesCmd output = %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "Processing Radarr sync targets") {
+		t.Fatalf("SyncMoviesCmd progress output = %q", errOut.String())
+	}
+}
+
 func TestCheckMoviesAndMovieUpdateBranches(t *testing.T) {
 	t.Run("check movies renders statuses and summary", func(t *testing.T) {
 		cfg := baseConfig()
@@ -1075,14 +1143,15 @@ func (f fakeRadarrService) SearchMovie(ctx context.Context, movieID int64) error
 
 func baseConfig() *config.Config {
 	return &config.Config{
-		PlexURL:             "http://plex",
-		PlexToken:           "token",
-		TVCollectionName:    "TV",
-		MovieCollectionName: "Movies",
-		SonarrURL:           "http://sonarr",
-		SonarrAPIKey:        "sonarr-key",
-		RadarrURL:           "http://radarr",
-		RadarrAPIKey:        "radarr-key",
+		PlexURL:                 "http://plex",
+		PlexToken:               "token",
+		TVCollectionName:        "TV",
+		MovieCollectionName:     "Movies",
+		SonarrURL:               "http://sonarr",
+		SonarrAPIKey:            "sonarr-key",
+		RadarrURL:               "http://radarr",
+		RadarrAPIKey:            "radarr-key",
+		MaxItemsProcessedPerRun: 30,
 	}
 }
 
