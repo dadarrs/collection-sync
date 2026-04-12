@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/dadarrs/collection-sync/compare/v0.1.3...v0.1.4) (2026-04-12)
+
+
+### Features
+
+* enhance movie and TV sync functionality with batch processing and state management ([#34](https://github.com/dadarrs/collection-sync/issues/34)) ([2647b4b](https://github.com/dadarrs/collection-sync/commit/2647b4b0f5c0e91ffaab9e6288b7f327aebe0a76))
+
 ## [0.1.3](https://github.com/dadarrs/collection-sync/compare/v0.1.2...v0.1.3) (2026-04-12)
 
 
