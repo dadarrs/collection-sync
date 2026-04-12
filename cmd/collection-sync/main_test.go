@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -25,6 +27,7 @@ const (
 	showBTitle         = "Show B"
 	queuedRadarrSearch = "queued Radarr search"
 	testMoviesRootPath = "/movies"
+	testTimeZone       = "America/New_York"
 )
 
 func TestPrintSyncTargets(t *testing.T) {
@@ -620,6 +623,52 @@ func TestRunCommandDryRunSinglePass(t *testing.T) {
 	}
 }
 
+func TestRunCommandIntervalWaitStatus(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Interval = "1ms"
+	cfg.MovieCollectionName = ""
+	d, out, _ := newTestDeps(cfg)
+	t.Setenv("TZ", testTimeZone)
+
+	callCount := 0
+	d.plex = fakePlexService{
+		findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+		getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+			callCount++
+			if callCount == 1 {
+				go func() {
+					time.Sleep(10 * time.Millisecond)
+					_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
+				}()
+			}
+			return nil, nil
+		},
+	}
+	d.sonarr = fakeSonarrService{}
+
+	if err := (&RunCmd{DryRun: true}).Run(d); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"interval: 1ms (next scheduled time:",
+		"[dry-run] previewing changes only",
+		"waiting for next run",
+		"last run took:",
+		"current time:",
+		"next scheduled time:",
+		"shutting down",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Run() output = %q, want substring %q", got, want)
+		}
+	}
+	if strings.Contains(got, " UTC") {
+		t.Fatalf("Run() output = %q, want configured timezone output", got)
+	}
+}
+
 func TestListCommandsRenderTables(t *testing.T) {
 	cfg := baseConfig()
 	d, out, _ := newTestDeps(cfg)
@@ -733,9 +782,9 @@ func TestRunLocation(t *testing.T) {
 	})
 
 	t.Run("uses configured timezone", func(t *testing.T) {
-		t.Setenv("TZ", "America/New_York")
-		if got := runLocation().String(); got != "America/New_York" {
-			t.Fatalf("runLocation() = %q, want America/New_York", got)
+		t.Setenv("TZ", testTimeZone)
+		if got := runLocation().String(); got != testTimeZone {
+			t.Fatalf("runLocation() = %q, want %s", got, testTimeZone)
 		}
 	})
 
@@ -768,7 +817,7 @@ func TestPrintWaitStatus(t *testing.T) {
 }
 
 func TestFormatRunTime(t *testing.T) {
-	loc, err := time.LoadLocation("America/New_York")
+	loc, err := time.LoadLocation(testTimeZone)
 	if err != nil {
 		t.Fatalf("LoadLocation() error = %v", err)
 	}
