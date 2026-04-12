@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const defaultMaxItemsProcessedPerRun = 30
+
 // Config holds all runtime configuration loaded from environment variables.
 type Config struct {
 	PlexURL   string
@@ -28,7 +30,8 @@ type Config struct {
 	TVCollectionName    string
 	MovieCollectionName string
 
-	Interval string
+	Interval                string
+	MaxItemsProcessedPerRun int
 }
 
 // Load reads configuration from environment variables and validates all required values.
@@ -44,6 +47,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	searchExisting, err := loadBoolEnv("SEARCH_EXISTING")
+	if err != nil {
+		return nil, err
+	}
+	maxItemsProcessedPerRun, err := loadPositiveIntEnv("MAX_ITEMS_PROCESSED_PER_RUN", defaultMaxItemsProcessedPerRun)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +74,8 @@ func Load() (*Config, error) {
 		TVCollectionName:    loadStringEnv("PLEX_TV_COLLECTION"),
 		MovieCollectionName: loadStringEnv("PLEX_MOVIE_COLLECTION"),
 
-		Interval: loadStringEnv("INTERVAL"),
+		Interval:                loadStringEnv("INTERVAL"),
+		MaxItemsProcessedPerRun: maxItemsProcessedPerRun,
 	}
 
 	return cfg, cfg.validate()
@@ -101,6 +109,23 @@ func loadBoolEnv(name string) (bool, error) {
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return false, fmt.Errorf("parsing %s: %w", name, err)
+	}
+
+	return parsed, nil
+}
+
+func loadPositiveIntEnv(name string, defaultValue int) (int, error) {
+	value := loadStringEnv(name)
+	if value == "" {
+		return defaultValue, nil
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("parsing %s: %w", name, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be greater than 0", name)
 	}
 
 	return parsed, nil
