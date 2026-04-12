@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/dadarrs/collection-sync/compare/v0.1.1...v0.1.2) (2026-04-12)
+
+
+### Bug Fixes
+
+* improve interval wait feedback ([#28](https://github.com/dadarrs/collection-sync/issues/28)) ([6fd1cfc](https://github.com/dadarrs/collection-sync/commit/6fd1cfc5f09f98f499ceb25e7b55c8b5ce3f1e73))
+
 ## [0.1.1](https://github.com/dadarrs/collection-sync/compare/v0.1.0...v0.1.1) (2026-04-11)
 
 
