@@ -1527,10 +1527,11 @@ func selectBatchCycle[T any](entries []T, limit int, completed []string, key fun
 	}
 }
 
-// completedBatchKeysForPersistence keeps previously completed entries and only
-// carries forward selected entries that actually succeeded in the current run.
+// completedBatchKeysForPersistence keeps previously completed entries that were
+// not selected in the current run, retains selected entries that succeeded, and
+// removes selected entries that failed so they remain eligible for retry.
 func completedBatchKeysForPersistence[T any](completed []string, selected []T, succeeded []string, key func(T) string) []string {
-	if len(completed) == 0 || len(selected) == 0 {
+	if len(completed) == 0 {
 		return append([]string(nil), completed...)
 	}
 
@@ -1544,7 +1545,7 @@ func completedBatchKeysForPersistence[T any](completed []string, selected []T, s
 		succeededSet[entryKey] = struct{}{}
 	}
 
-	filtered := make([]string, 0, len(completed))
+	var filtered []string
 	for _, entryKey := range completed {
 		if _, wasSelected := selectedSet[entryKey]; wasSelected {
 			if _, didSucceed := succeededSet[entryKey]; !didSucceed {
