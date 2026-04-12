@@ -29,6 +29,7 @@ var version = "dev"
 
 const (
 	totalMoviesFormat   = "\nTotal: %d movies\n"
+	runTimeFormat       = "2006-01-02 15:04:05 -07:00 MST"
 	statusAdded         = "added"
 	statusExisting      = "existing"
 	statusFailed        = "failed"
@@ -119,29 +120,70 @@ func (c *RunCmd) Run(d *deps) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	d.printf("interval: %s (next run: %s)\n\n", interval, time.Now().Add(interval).Format(time.DateTime))
+	loc := runLocation()
+	nextRun := time.Now().Add(interval)
+	d.printf("interval: %s (next scheduled time: %s)\n\n", interval, formatRunTime(nextRun, loc))
 
+	start := time.Now()
 	if err := d.syncAll(tv, movies, c.DryRun); err != nil {
 		d.errorf("sync error: %v\n", err)
 	}
+	end := time.Now()
+	printWaitStatus(d.output(), end.Sub(start), end, nextRun, loc)
 
-	return c.runContinuously(ctx, d, tv, movies, interval, ticker.C)
+	return c.runContinuously(ctx, d, tv, movies, interval, loc, ticker.C)
 }
 
-func (c *RunCmd) runContinuously(ctx context.Context, d *deps, tv, movies bool, interval time.Duration, ticks <-chan time.Time) error {
+func (c *RunCmd) runContinuously(ctx context.Context, d *deps, tv, movies bool, interval time.Duration, loc *time.Location, ticks <-chan time.Time) error {
 	for {
 		select {
 		case <-ctx.Done():
 			d.println("\nshutting down")
 			return nil
 		case tick := <-ticks:
-			d.printf("\n--- sync started at %s ---\n\n", time.Now().Format(time.DateTime))
+			start := time.Now()
+			d.printf("\n--- sync started at %s ---\n\n", formatRunTime(start, loc))
 			if err := d.syncAll(tv, movies, c.DryRun); err != nil {
 				d.errorf("sync error: %v\n", err)
 			}
-			d.printf("\nnext run: %s\n", tick.Add(interval).Format(time.DateTime))
+			end := time.Now()
+			printWaitStatus(d.output(), end.Sub(start), end, tick.Add(interval), loc)
 		}
 	}
+}
+
+func runLocation() *time.Location {
+	tz := strings.TrimSpace(os.Getenv("TZ"))
+	if tz == "" {
+		return time.UTC
+	}
+
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return time.UTC
+	}
+
+	return loc
+}
+
+func formatRunTime(t time.Time, loc *time.Location) string {
+	return t.In(loc).Format(runTimeFormat)
+}
+
+func formatRunDuration(d time.Duration) string {
+	if d < time.Millisecond {
+		return d.String()
+	}
+
+	return d.Round(time.Millisecond).String()
+}
+
+func printWaitStatus(w io.Writer, lastRun time.Duration, currentTime, nextRun time.Time, loc *time.Location) {
+	_, _ = fmt.Fprintf(w, "\nwaiting for next run\nlast run took: %s\ncurrent time: %s\nnext scheduled time: %s\n",
+		formatRunDuration(lastRun),
+		formatRunTime(currentTime, loc),
+		formatRunTime(nextRun, loc),
+	)
 }
 
 func printSyncTargets(w io.Writer, tv, movies bool) {

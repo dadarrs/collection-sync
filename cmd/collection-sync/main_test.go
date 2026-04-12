@@ -696,7 +696,7 @@ func TestRunContinuouslyAndWriters(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := (&RunCmd{}).runContinuously(ctx, d, false, false, time.Minute, make(chan time.Time)); err != nil {
+	if err := (&RunCmd{}).runContinuously(ctx, d, false, false, time.Minute, time.UTC, make(chan time.Time)); err != nil {
 		t.Fatalf("runContinuously() error = %v", err)
 	}
 	if !strings.Contains(out.String(), "shutting down") {
@@ -716,11 +716,54 @@ func TestRunContinuouslyAndWriters(t *testing.T) {
 		},
 	}
 	d.sonarr = fakeSonarrService{}
-	if err := (&RunCmd{DryRun: true}).runContinuously(ctx, d, true, false, time.Minute, ticks); err != nil {
+	if err := (&RunCmd{DryRun: true}).runContinuously(ctx, d, true, false, time.Minute, time.UTC, ticks); err != nil {
 		t.Fatalf("runContinuously(tick) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "sync started") || !strings.Contains(got, "next run") {
+	if got := out.String(); !strings.Contains(got, "sync started") || !strings.Contains(got, "last run took") || !strings.Contains(got, "current time") || !strings.Contains(got, "next scheduled time") {
 		t.Fatalf("runContinuously(tick) output = %q", got)
+	}
+}
+
+func TestRunLocation(t *testing.T) {
+	t.Run("defaults to UTC", func(t *testing.T) {
+		t.Setenv("TZ", "")
+		if got := runLocation(); got != time.UTC {
+			t.Fatalf("runLocation() = %v, want UTC", got)
+		}
+	})
+
+	t.Run("uses configured timezone", func(t *testing.T) {
+		t.Setenv("TZ", "America/New_York")
+		if got := runLocation().String(); got != "America/New_York" {
+			t.Fatalf("runLocation() = %q, want America/New_York", got)
+		}
+	})
+
+	t.Run("falls back to UTC for invalid timezone", func(t *testing.T) {
+		t.Setenv("TZ", "Mars/Olympus_Mons")
+		if got := runLocation(); got != time.UTC {
+			t.Fatalf("runLocation() = %v, want UTC", got)
+		}
+	})
+}
+
+func TestPrintWaitStatus(t *testing.T) {
+	out := &bytes.Buffer{}
+	currentTime := time.Date(2026, time.April, 12, 4, 11, 28, 0, time.UTC)
+	nextRun := currentTime.Add(10 * time.Minute)
+
+	printWaitStatus(out, 1500*time.Millisecond, currentTime, nextRun, time.UTC)
+
+	got := out.String()
+	for _, want := range []string{
+		"waiting for next run",
+		"last run took: 1.5s",
+		"current time: 2026-04-12 04:11:28 +00:00 UTC",
+		"next scheduled time: 2026-04-12 04:21:28 +00:00 UTC",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("printWaitStatus() output = %q, want substring %q", got, want)
+		}
 	}
 }
 

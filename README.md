@@ -137,5 +137,6 @@ Copy `.env.example` to `.env` and set the variables below.
 | `SEARCH_ADDED` | `sync` commands | Optional. When `true`, queue a Sonarr or Radarr search after content is added or newly enabled for monitoring. |
 | `SEARCH_EXISTING` | `sync` commands | Optional. When `true`, queue a Sonarr or Radarr search even when the requested item already exists. |
 | `INTERVAL` | `run` | Optional. Repeat the sync on this interval, for example `10m`, `1h`, `6h`, `3d`. If unset, `run` syncs once and exits. |
+| `TZ` | `run` | Optional. Time zone used when printing interval status timestamps. Uses UTC when unset or invalid. |
 
 Reliable matching depends on Plex metadata exposing TVDB IDs for TV items and TMDB IDs for movies.
