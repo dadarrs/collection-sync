@@ -25,6 +25,7 @@ var configEnvNames = []string{
 	"PLEX_MOVIE_COLLECTION",
 	"SEARCH_ADDED",
 	"SEARCH_EXISTING",
+	"MAX_ITEMS_PROCESSED_PER_RUN",
 	"INTERVAL",
 }
 
@@ -42,6 +43,7 @@ type loadConfigTestCase struct {
 	wantMovie       string
 	wantSearchAdded bool
 	wantSearchExist bool
+	wantMaxItems    int
 	wantErrContains []string
 }
 
@@ -56,23 +58,26 @@ func TestLoad(t *testing.T) {
 	tests := []loadConfigTestCase{
 		{
 			name:            "uses dot env when runtime env absent",
-			dotEnv:          "PLEX_URL=http://plex\nPLEX_TOKEN=token\nPLEX_TV_COLLECTION=TV\nPLEX_MOVIE_COLLECTION=Movies\nSEARCH_ADDED=true\nSEARCH_EXISTING=true\n",
+			dotEnv:          "PLEX_URL=http://plex\nPLEX_TOKEN=token\nPLEX_TV_COLLECTION=TV\nPLEX_MOVIE_COLLECTION=Movies\nSEARCH_ADDED=true\nSEARCH_EXISTING=true\nMAX_ITEMS_PROCESSED_PER_RUN=45\n",
 			wantTV:          "TV",
 			wantMovie:       "Movies",
 			wantSearchAdded: true,
 			wantSearchExist: true,
+			wantMaxItems:    45,
 		},
 		{
 			name: "runtime env takes precedence over dot env",
 			env: map[string]string{
-				"PLEX_URL":              testRuntimePlexURL,
-				"PLEX_TOKEN":            "runtime-token",
-				"PLEX_TV_COLLECTION":    "Runtime TV",
-				"PLEX_MOVIE_COLLECTION": "Runtime Movies",
+				"PLEX_URL":                    testRuntimePlexURL,
+				"PLEX_TOKEN":                  "runtime-token",
+				"PLEX_TV_COLLECTION":          "Runtime TV",
+				"PLEX_MOVIE_COLLECTION":       "Runtime Movies",
+				"MAX_ITEMS_PROCESSED_PER_RUN": "12",
 			},
-			dotEnv:    "PLEX_URL=http://dotenv\nPLEX_TOKEN=dotenv-token\nPLEX_TV_COLLECTION=DotEnv TV\nPLEX_MOVIE_COLLECTION=DotEnv Movies\n",
-			wantTV:    "Runtime TV",
-			wantMovie: "Runtime Movies",
+			dotEnv:       "PLEX_URL=http://dotenv\nPLEX_TOKEN=dotenv-token\nPLEX_TV_COLLECTION=DotEnv TV\nPLEX_MOVIE_COLLECTION=DotEnv Movies\nMAX_ITEMS_PROCESSED_PER_RUN=45\n",
+			wantTV:       "Runtime TV",
+			wantMovie:    "Runtime Movies",
+			wantMaxItems: 12,
 		},
 		{
 			name: "missing plex url",
@@ -109,6 +114,24 @@ func TestLoad(t *testing.T) {
 				"SEARCH_EXISTING": "nope",
 			},
 			wantErrContains: []string{"parsing SEARCH_EXISTING"},
+		},
+		{
+			name: "invalid max items processed",
+			env: map[string]string{
+				"PLEX_URL":                    testPlexURL,
+				"PLEX_TOKEN":                  "token",
+				"MAX_ITEMS_PROCESSED_PER_RUN": "many",
+			},
+			wantErrContains: []string{"parsing MAX_ITEMS_PROCESSED_PER_RUN"},
+		},
+		{
+			name: "non-positive max items processed",
+			env: map[string]string{
+				"PLEX_URL":                    testPlexURL,
+				"PLEX_TOKEN":                  "token",
+				"MAX_ITEMS_PROCESSED_PER_RUN": "0",
+			},
+			wantErrContains: []string{"MAX_ITEMS_PROCESSED_PER_RUN must be positive"},
 		},
 	}
 
@@ -169,18 +192,25 @@ func assertLoadedConfig(t *testing.T, cfg *Config, tt loadConfigTestCase) {
 	if cfg.SearchExisting != tt.wantSearchExist {
 		t.Fatalf("SearchExisting = %t, want %t", cfg.SearchExisting, tt.wantSearchExist)
 	}
+	wantMaxItems := tt.wantMaxItems
+	if wantMaxItems == 0 {
+		wantMaxItems = 30
+	}
+	if cfg.MaxItemsProcessedPerRun != wantMaxItems {
+		t.Fatalf("MaxItemsProcessedPerRun = %d, want %d", cfg.MaxItemsProcessedPerRun, wantMaxItems)
+	}
 }
 
 func TestValidate(t *testing.T) {
 	t.Run("valid config", func(t *testing.T) {
-		cfg := &Config{PlexURL: "http://plex", PlexToken: "token"}
+		cfg := &Config{PlexURL: "http://plex", PlexToken: "token", MaxItemsProcessedPerRun: 30}
 		if err := cfg.validate(); err != nil {
 			t.Fatalf("validate() error = %v", err)
 		}
 	})
 
 	t.Run("aggregates missing values", func(t *testing.T) {
-		cfg := &Config{}
+		cfg := &Config{MaxItemsProcessedPerRun: 30}
 		err := cfg.validate()
 		if err == nil {
 			t.Fatal("validate() error = nil, want error")

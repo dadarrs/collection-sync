@@ -22,18 +22,25 @@ import (
 )
 
 const (
-	seasonOneLabel     = "Season 1"
-	showATitle         = "Show A"
-	showBTitle         = "Show B"
-	queuedRadarrSearch = "queued Radarr search"
-	testMoviesRootPath = "/movies"
-	testSignalDelay    = 10 * time.Millisecond
-	testTimeZone       = "America/New_York"
+	buildMovieSyncTargetsFmt = "buildMovieSyncTargets() = %+v"
+	duneTitle                = "Dune"
+	kingKongTitle            = "King Kong"
+	movieATitle              = "Movie A"
+	movieBTitle              = "Movie B"
+	movieCTitle              = "Movie C"
+	seasonOneLabel           = "Season 1"
+	showATitle               = "Show A"
+	showBTitle               = "Show B"
+	queuedRadarrSearch       = "queued Radarr search"
+	runErrorFmt              = "Run() error = %v"
+	testMoviesRootPath       = "/movies"
+	testSignalDelay          = 10 * time.Millisecond
+	testTimeZone             = "America/New_York"
 )
 
 func TestPrintSyncTargets(t *testing.T) {
 	var buf bytes.Buffer
-	printSyncTargets(&buf, true, true)
+	printSyncTargets(&buf, ui.New(&buf), true, true)
 	if got := buf.String(); got != "sync targets: tv, movies\n" {
 		t.Fatalf("printSyncTargets() = %q", got)
 	}
@@ -133,29 +140,29 @@ func TestBuildTVSyncTargets(t *testing.T) {
 
 func TestBuildMovieSyncTargets(t *testing.T) {
 	t.Run("upgrades unknown title to sole tmdb id", func(t *testing.T) {
-		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: "Movie B", TMDBID: 0}, {Title: "Movie A", TMDBID: 1}, {Title: "Movie B", TMDBID: 2}})
-		if len(movieTargets) != 2 || movieTargets[0].Title != "Movie A" || movieTargets[0].TMDBID != 1 || movieTargets[1].Title != "Movie B" || movieTargets[1].TMDBID != 2 {
-			t.Fatalf("buildMovieSyncTargets() = %+v", movieTargets)
+		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: movieBTitle, TMDBID: 0}, {Title: movieATitle, TMDBID: 1}, {Title: movieBTitle, TMDBID: 2}})
+		if len(movieTargets) != 2 || movieTargets[0].Title != movieATitle || movieTargets[0].TMDBID != 1 || movieTargets[1].Title != movieBTitle || movieTargets[1].TMDBID != 2 {
+			t.Fatalf(buildMovieSyncTargetsFmt, movieTargets)
 		}
 	})
 
 	t.Run("preserves distinct remakes with same title", func(t *testing.T) {
-		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: "Dune", TMDBID: 438631}, {Title: "Dune", TMDBID: 841}, {Title: "Dune", TMDBID: 438631}})
+		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: duneTitle, TMDBID: 438631}, {Title: duneTitle, TMDBID: 841}, {Title: duneTitle, TMDBID: 438631}})
 		if len(movieTargets) != 2 {
 			t.Fatalf("len(buildMovieSyncTargets()) = %d, want 2 (%+v)", len(movieTargets), movieTargets)
 		}
-		if movieTargets[0].Title != "Dune" || movieTargets[0].TMDBID != 841 || movieTargets[1].Title != "Dune" || movieTargets[1].TMDBID != 438631 {
-			t.Fatalf("buildMovieSyncTargets() = %+v", movieTargets)
+		if movieTargets[0].Title != duneTitle || movieTargets[0].TMDBID != 841 || movieTargets[1].Title != duneTitle || movieTargets[1].TMDBID != 438631 {
+			t.Fatalf(buildMovieSyncTargetsFmt, movieTargets)
 		}
 	})
 
 	t.Run("keeps unknown title separate when multiple tmdb ids exist", func(t *testing.T) {
-		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: "King Kong", TMDBID: 0}, {Title: "King Kong", TMDBID: 9072}, {Title: "King Kong", TMDBID: 254}})
+		movieTargets := buildMovieSyncTargets([]plexpkg.Item{{Title: kingKongTitle, TMDBID: 0}, {Title: kingKongTitle, TMDBID: 9072}, {Title: kingKongTitle, TMDBID: 254}})
 		if len(movieTargets) != 3 {
 			t.Fatalf("len(buildMovieSyncTargets()) = %d, want 3 (%+v)", len(movieTargets), movieTargets)
 		}
 		if movieTargets[0].TMDBID != 0 || movieTargets[1].TMDBID != 254 || movieTargets[2].TMDBID != 9072 {
-			t.Fatalf("buildMovieSyncTargets() = %+v", movieTargets)
+			t.Fatalf(buildMovieSyncTargetsFmt, movieTargets)
 		}
 	})
 }
@@ -174,6 +181,334 @@ func TestSelectSyncItems(t *testing.T) {
 	}
 	if _, err := selectMovieSyncItems([]plexpkg.Item{{Title: "Movie"}}, &row); err == nil {
 		t.Fatal("selectMovieSyncItems() error = nil, want out of range error")
+	}
+}
+
+func TestSelectBatchCycle(t *testing.T) {
+	entries := []movieSyncPlanEntry{
+		{key: "tmdb:1"},
+		{key: "tmdb:2"},
+		{key: "tmdb:3"},
+	}
+
+	selection := selectBatchCycle(entries, 2, nil, func(entry movieSyncPlanEntry) string { return entry.key })
+	if len(selection.selected) != 2 || selection.selected[0].key != "tmdb:1" || selection.selected[1].key != "tmdb:2" {
+		t.Fatalf("first selectBatchCycle() = %+v", selection.selected)
+	}
+	if selection.remaining != 1 {
+		t.Fatalf("first remaining = %d, want 1", selection.remaining)
+	}
+
+	selection = selectBatchCycle(entries, 2, selection.completed, func(entry movieSyncPlanEntry) string { return entry.key })
+	if len(selection.selected) != 1 || selection.selected[0].key != "tmdb:3" {
+		t.Fatalf("second selectBatchCycle() = %+v", selection.selected)
+	}
+	if selection.remaining != 0 {
+		t.Fatalf("second remaining = %d, want 0", selection.remaining)
+	}
+}
+
+func TestPlanMovieSyncTargetsSkipsAlreadySatisfied(t *testing.T) {
+	d, _, _ := newTestDeps(baseConfig())
+	targets := []movieSyncTarget{{Title: "Movie", TMDBID: 7}}
+	d.radarr = fakeRadarrService{
+		findMovie: func(context.Context, string, int64) (*radarrpkg.MovieMatch, error) {
+			return &radarrpkg.MovieMatch{MatchedBy: "tmdb", Movie: &starrradarr.Movie{ID: 7, Title: "Movie", Monitored: true}}, nil
+		},
+		previewUpdateMovieMonitoring: func(*starrradarr.Movie, bool) (bool, error) {
+			return false, nil
+		},
+	}
+
+	plan, err := d.planMovieSyncTargets(context.Background(), targets, 30, true)
+	if err != nil {
+		t.Fatalf("planMovieSyncTargets() error = %v", err)
+	}
+	if plan.stats.totalTargets != 1 || plan.stats.eligibleTargets != 0 || plan.stats.alreadySatisfiedTargets != 1 {
+		t.Fatalf("planMovieSyncTargets() stats = %+v", plan.stats)
+	}
+	if len(plan.selected) != 0 {
+		t.Fatalf("planMovieSyncTargets() selected = %+v, want none", plan.selected)
+	}
+}
+
+func TestTVTargetRequiresProcessing(t *testing.T) {
+	d, _, _ := newTestDeps(baseConfig())
+	target := tvSyncTarget{Title: "Show", TVDBID: 10, MonitorAll: true}
+	match := &sonarrpkg.SeriesMatch{MatchedBy: "tvdb", Series: &starrsonarr.Series{Title: "Show", Monitored: true, Seasons: []*starrsonarr.Season{{SeasonNumber: 1, Monitored: true}}}}
+
+	t.Run("returns true when monitoring would change", func(t *testing.T) {
+		d.sonarr = fakeSonarrService{previewUpdateSeriesMonitoring: func(*starrsonarr.Series, sonarrpkg.CreateSeriesRequest) (bool, error) {
+			return true, nil
+		}}
+		requiresProcessing, err := d.tvTargetRequiresProcessing(target, match)
+		if err != nil || !requiresProcessing {
+			t.Fatalf("tvTargetRequiresProcessing() = (%t, %v)", requiresProcessing, err)
+		}
+	})
+
+	t.Run("returns true when existing search should run", func(t *testing.T) {
+		d.cfg.SearchExisting = true
+		d.sonarr = fakeSonarrService{previewUpdateSeriesMonitoring: func(*starrsonarr.Series, sonarrpkg.CreateSeriesRequest) (bool, error) {
+			return false, nil
+		}}
+		requiresProcessing, err := d.tvTargetRequiresProcessing(target, match)
+		if err != nil || !requiresProcessing {
+			t.Fatalf("tvTargetRequiresProcessing(search existing) = (%t, %v)", requiresProcessing, err)
+		}
+	})
+
+	t.Run("returns false when no work is required", func(t *testing.T) {
+		d.cfg.SearchExisting = false
+		d.sonarr = fakeSonarrService{previewUpdateSeriesMonitoring: func(*starrsonarr.Series, sonarrpkg.CreateSeriesRequest) (bool, error) {
+			return false, nil
+		}}
+		requiresProcessing, err := d.tvTargetRequiresProcessing(target, match)
+		if err != nil || requiresProcessing {
+			t.Fatalf("tvTargetRequiresProcessing(no work) = (%t, %v)", requiresProcessing, err)
+		}
+	})
+}
+
+func TestMovieTargetRequiresProcessing(t *testing.T) {
+	d, _, _ := newTestDeps(baseConfig())
+	match := &radarrpkg.MovieMatch{MatchedBy: "tmdb", Movie: &starrradarr.Movie{ID: 7, Title: "Movie", Monitored: true}}
+
+	t.Run("returns true when monitoring would change", func(t *testing.T) {
+		d.radarr = fakeRadarrService{previewUpdateMovieMonitoring: func(*starrradarr.Movie, bool) (bool, error) {
+			return true, nil
+		}}
+		requiresProcessing, err := d.movieTargetRequiresProcessing(match)
+		if err != nil || !requiresProcessing {
+			t.Fatalf("movieTargetRequiresProcessing() = (%t, %v)", requiresProcessing, err)
+		}
+	})
+
+	t.Run("returns true when existing search should run", func(t *testing.T) {
+		d.cfg.SearchExisting = true
+		d.radarr = fakeRadarrService{previewUpdateMovieMonitoring: func(*starrradarr.Movie, bool) (bool, error) {
+			return false, nil
+		}}
+		requiresProcessing, err := d.movieTargetRequiresProcessing(match)
+		if err != nil || !requiresProcessing {
+			t.Fatalf("movieTargetRequiresProcessing(search existing) = (%t, %v)", requiresProcessing, err)
+		}
+	})
+
+	t.Run("returns false when no work is required", func(t *testing.T) {
+		d.cfg.SearchExisting = false
+		d.radarr = fakeRadarrService{previewUpdateMovieMonitoring: func(*starrradarr.Movie, bool) (bool, error) {
+			return false, nil
+		}}
+		requiresProcessing, err := d.movieTargetRequiresProcessing(match)
+		if err != nil || requiresProcessing {
+			t.Fatalf("movieTargetRequiresProcessing(no work) = (%t, %v)", requiresProcessing, err)
+		}
+	})
+}
+
+func TestPlanTVSyncTargetBranches(t *testing.T) {
+	d, _, _ := newTestDeps(baseConfig())
+	cache := map[string]cachedLookup{}
+
+	t.Run("invalid when show id is missing", func(t *testing.T) {
+		d.sonarr = fakeSonarrService{findSeries: func(context.Context, string, int64) (*sonarrpkg.SeriesMatch, error) {
+			return nil, sonarrpkg.ErrSeriesNotFound
+		}}
+		_, classification, err := d.planTVSyncTarget(context.Background(), cache, tvSyncTarget{Title: "Show"})
+		if err != nil || classification != batchClassificationInvalid {
+			t.Fatalf("planTVSyncTarget(invalid) = (%v, %v)", classification, err)
+		}
+	})
+
+	t.Run("already satisfied when no update or search is needed", func(t *testing.T) {
+		cache = map[string]cachedLookup{}
+		d.cfg.SearchExisting = false
+		d.sonarr = fakeSonarrService{
+			findSeries: func(context.Context, string, int64) (*sonarrpkg.SeriesMatch, error) {
+				return &sonarrpkg.SeriesMatch{MatchedBy: "tvdb", Series: &starrsonarr.Series{Title: "Show", Monitored: true, Seasons: []*starrsonarr.Season{{SeasonNumber: 1, Monitored: true}}}}, nil
+			},
+			previewUpdateSeriesMonitoring: func(*starrsonarr.Series, sonarrpkg.CreateSeriesRequest) (bool, error) {
+				return false, nil
+			},
+		}
+		_, classification, err := d.planTVSyncTarget(context.Background(), cache, tvSyncTarget{Title: "Show", TVDBID: 10, MonitorAll: true})
+		if err != nil || classification != batchClassificationAlreadySatisfied {
+			t.Fatalf("planTVSyncTarget(already satisfied) = (%v, %v)", classification, err)
+		}
+	})
+
+	t.Run("evaluation failure when lookup fails", func(t *testing.T) {
+		cache = map[string]cachedLookup{}
+		boom := errors.New("boom")
+		d.sonarr = fakeSonarrService{findSeries: func(context.Context, string, int64) (*sonarrpkg.SeriesMatch, error) {
+			return nil, boom
+		}}
+		_, classification, err := d.planTVSyncTarget(context.Background(), cache, tvSyncTarget{Title: "Show", TVDBID: 10})
+		if !errors.Is(err, boom) || classification != batchClassificationEvaluationFailed {
+			t.Fatalf("planTVSyncTarget(eval failure) = (%v, %v)", classification, err)
+		}
+	})
+}
+
+func TestManualRowSyncCommands(t *testing.T) {
+	t.Run("tv sync selected row", func(t *testing.T) {
+		d, out, _ := newTestDeps(baseConfig())
+		row := 1
+		d.plex = fakePlexService{
+			findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+			getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+				return []plexpkg.Item{{Title: "Show", Type: "show", TVDBID: 10}}, nil
+			},
+		}
+		d.sonarr = fakeSonarrService{
+			findSeries: func(context.Context, string, int64) (*sonarrpkg.SeriesMatch, error) {
+				return nil, sonarrpkg.ErrSeriesNotFound
+			},
+			resolveAddSeriesDefaults: func(context.Context, string, string) (sonarrpkg.AddSeriesDefaults, error) {
+				return sonarrpkg.AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileName: "HD"}, nil
+			},
+			previewCreateSeries: func(context.Context, sonarrpkg.CreateSeriesRequest, sonarrpkg.AddSeriesDefaults) (string, error) {
+				return "Show", nil
+			},
+		}
+
+		if err := (&SyncTVCmd{Number: &row, DryRun: true}).Run(d); err != nil {
+			t.Fatalf("SyncTVCmd.Run(selected row) error = %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, "Show") || !strings.Contains(got, "Processed this run: 1 shows") {
+			t.Fatalf("SyncTVCmd.Run(selected row) output = %q", got)
+		}
+	})
+
+	t.Run("movie sync selected row", func(t *testing.T) {
+		d, out, _ := newTestDeps(baseConfig())
+		row := 1
+		d.plex = fakePlexService{
+			findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+			getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+				return []plexpkg.Item{{Title: "Movie", TMDBID: 20}}, nil
+			},
+		}
+		d.radarr = fakeRadarrService{
+			findMovie: func(context.Context, string, int64) (*radarrpkg.MovieMatch, error) {
+				return nil, radarrpkg.ErrMovieNotFound
+			},
+			resolveAddMovieDefaults: func(context.Context, string, string) (radarrpkg.AddMovieDefaults, error) {
+				return radarrpkg.AddMovieDefaults{RootFolderPath: testMoviesRootPath, QualityProfileName: "HD"}, nil
+			},
+			previewCreateMovie: func(context.Context, radarrpkg.CreateMovieRequest, radarrpkg.AddMovieDefaults) (string, error) {
+				return "Movie", nil
+			},
+		}
+
+		if err := (&SyncMoviesCmd{Number: &row, DryRun: true}).Run(d); err != nil {
+			t.Fatalf("SyncMoviesCmd.Run(selected row) error = %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, "Movie") || !strings.Contains(got, "Processed this run: 1 movies") {
+			t.Fatalf("SyncMoviesCmd.Run(selected row) output = %q", got)
+		}
+	})
+}
+
+func TestMovieSyncBatchAdvancesAcrossRuns(t *testing.T) {
+	cfg := baseConfig()
+	cfg.MaxItemsProcessedPerRun = 2
+	cfg.SearchExisting = true
+	d, out, _ := newTestDeps(cfg)
+	d.plex = fakePlexService{
+		findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+		getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+			return []plexpkg.Item{
+				{Title: movieATitle, TMDBID: 1},
+				{Title: "Movie B", TMDBID: 2},
+				{Title: movieCTitle, TMDBID: 3},
+			}, nil
+		},
+	}
+	d.radarr = fakeRadarrService{
+		findMovie: func(_ context.Context, title string, tmdbID int64) (*radarrpkg.MovieMatch, error) {
+			return &radarrpkg.MovieMatch{MatchedBy: "tmdb", Movie: &starrradarr.Movie{ID: tmdbID, Title: title, Monitored: true}}, nil
+		},
+		previewUpdateMovieMonitoring: func(*starrradarr.Movie, bool) (bool, error) { return false, nil },
+		searchMovie:                  func(context.Context, int64) error { return nil },
+	}
+
+	if err := (&SyncMoviesCmd{}).Run(d); err != nil {
+		t.Fatalf("first SyncMoviesCmd.Run() error = %v", err)
+	}
+	first := out.String()
+	if !strings.Contains(first, "Radarr target summary") || !strings.Contains(first, "deduped targets: 3") || !strings.Contains(first, "eligible: 3") || !strings.Contains(first, "processing this run: 2") || !strings.Contains(first, "remaining after this run: 1") {
+		t.Fatalf("first SyncMoviesCmd.Run() output = %q", first)
+	}
+	if !strings.Contains(first, movieATitle) || !strings.Contains(first, movieBTitle) || strings.Contains(first, movieCTitle) {
+		t.Fatalf("first SyncMoviesCmd.Run() processed wrong titles: %q", first)
+	}
+
+	out.Reset()
+	if err := (&SyncMoviesCmd{}).Run(d); err != nil {
+		t.Fatalf("second SyncMoviesCmd.Run() error = %v", err)
+	}
+	second := out.String()
+	if !strings.Contains(second, "Radarr target summary") || !strings.Contains(second, "deduped targets: 3") || !strings.Contains(second, "eligible: 3") || !strings.Contains(second, "processing this run: 1") || !strings.Contains(second, "remaining after this run: 0") {
+		t.Fatalf("second SyncMoviesCmd.Run() output = %q", second)
+	}
+	if !strings.Contains(second, movieCTitle) || strings.Contains(second, movieATitle) || strings.Contains(second, movieBTitle) {
+		t.Fatalf("second SyncMoviesCmd.Run() processed wrong titles: %q", second)
+	}
+}
+
+func TestRunCommandUsesSharedBatchBudget(t *testing.T) {
+	cfg := baseConfig()
+	cfg.MaxItemsProcessedPerRun = 1
+	d, out, _ := newTestDeps(cfg)
+	d.plex = fakePlexService{
+		findCollectionByName: func(_ context.Context, name string) (string, error) { return name, nil },
+		getCollectionItems: func(_ context.Context, collectionKey string) ([]plexpkg.Item, error) {
+			switch collectionKey {
+			case "TV":
+				return []plexpkg.Item{{Title: "Show", Type: "show", TVDBID: 10}}, nil
+			case "Movies":
+				return []plexpkg.Item{{Title: "Movie", TMDBID: 20}}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	d.sonarr = fakeSonarrService{
+		findSeries: func(context.Context, string, int64) (*sonarrpkg.SeriesMatch, error) {
+			return nil, sonarrpkg.ErrSeriesNotFound
+		},
+		resolveAddSeriesDefaults: func(context.Context, string, string) (sonarrpkg.AddSeriesDefaults, error) {
+			return sonarrpkg.AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileName: "HD"}, nil
+		},
+		previewCreateSeries: func(context.Context, sonarrpkg.CreateSeriesRequest, sonarrpkg.AddSeriesDefaults) (string, error) {
+			return "Show", nil
+		},
+	}
+	d.radarr = fakeRadarrService{
+		findMovie: func(context.Context, string, int64) (*radarrpkg.MovieMatch, error) {
+			return nil, radarrpkg.ErrMovieNotFound
+		},
+		resolveAddMovieDefaults: func(context.Context, string, string) (radarrpkg.AddMovieDefaults, error) {
+			return radarrpkg.AddMovieDefaults{RootFolderPath: testMoviesRootPath, QualityProfileName: "HD"}, nil
+		},
+		previewCreateMovie: func(context.Context, radarrpkg.CreateMovieRequest, radarrpkg.AddMovieDefaults) (string, error) {
+			return "Movie", nil
+		},
+	}
+
+	if err := (&RunCmd{DryRun: true}).Run(d); err != nil {
+		t.Fatalf(runErrorFmt, err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "Sonarr target summary") || !strings.Contains(got, "deduped targets: 1") || !strings.Contains(got, "eligible: 1") || !strings.Contains(got, "processing this run: 1") || !strings.Contains(got, "remaining after this run: 0") {
+		t.Fatalf("Run() output missing tv batch summary: %q", got)
+	}
+	if !strings.Contains(got, "Radarr target summary") || !strings.Contains(got, "deduped targets: 1") || !strings.Contains(got, "eligible: 1") || !strings.Contains(got, "processing this run: 0") || !strings.Contains(got, "remaining after this run: 1") {
+		t.Fatalf("Run() output missing movie batch summary: %q", got)
 	}
 }
 
@@ -291,6 +626,18 @@ func TestNewCollectionProgressFunc(t *testing.T) {
 	collectionProgress(3, 3)
 	if got := buf.String(); !strings.Contains(got, "3/3") || !strings.HasSuffix(got, "\n") {
 		t.Fatalf("progress(3,3) = %q", got)
+	}
+
+	buf.Reset()
+	collectionProgress(1, 5)
+	if got := buf.String(); !strings.Contains(got, "1/5") || strings.Contains(got, "1/3") {
+		t.Fatalf("progress reset for new collection = %q", got)
+	}
+
+	buf.Reset()
+	collectionProgress(5, 5)
+	if got := buf.String(); !strings.Contains(got, "5/5") || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("progress(5,5) = %q", got)
 	}
 }
 
@@ -616,10 +963,10 @@ func TestRunCommandDryRunSinglePass(t *testing.T) {
 	}
 	d.sonarr = fakeSonarrService{}
 	if err := (&RunCmd{DryRun: true}).Run(d); err != nil {
-		t.Fatalf("Run() error = %v", err)
+		t.Fatalf(runErrorFmt, err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "[dry-run] previewing changes only") || !strings.Contains(got, "sync targets: tv") || !strings.Contains(got, "=== TV Sync ===") {
+	if !strings.Contains(got, "[dry-run] previewing changes only") || !strings.Contains(got, "sync targets: tv") || !strings.Contains(got, "TV Sync") {
 		t.Fatalf("Run() output = %q", got)
 	}
 }
@@ -648,12 +995,14 @@ func TestRunCommandIntervalWaitStatus(t *testing.T) {
 	d.sonarr = fakeSonarrService{}
 
 	if err := (&RunCmd{DryRun: true}).Run(d); err != nil {
-		t.Fatalf("Run() error = %v", err)
+		t.Fatalf(runErrorFmt, err)
 	}
 
 	got := out.String()
 	for _, want := range []string{
-		"interval: 1ms (next scheduled time:",
+		"interval status",
+		"interval: 1ms",
+		"next scheduled time:",
 		"[dry-run] previewing changes only",
 		"waiting for next run",
 		"last run took:",
@@ -736,9 +1085,9 @@ func TestCheckAndSyncCommands(t *testing.T) {
 
 func TestRunContinuouslyAndWriters(t *testing.T) {
 	d, out, errOut := newTestDeps(baseConfig())
-	d.errorf("sync error: boom\n")
+	d.printerrln("sync error: boom")
 	if got := errOut.String(); !strings.Contains(got, "sync error: boom") {
-		t.Fatalf("errorf() wrote %q", got)
+		t.Fatalf("printerrln() wrote %q", got)
 	}
 	if d.output() != out || d.errorOutput() != errOut {
 		t.Fatal("output()/errorOutput() did not return injected writers")
@@ -802,7 +1151,7 @@ func TestPrintWaitStatus(t *testing.T) {
 	currentTime := time.Date(2026, time.April, 12, 4, 11, 28, 0, time.UTC)
 	nextRun := currentTime.Add(10 * time.Minute)
 
-	printWaitStatus(out, 1500*time.Millisecond, currentTime, nextRun, time.UTC)
+	printWaitStatus(out, ui.New(out), 1500*time.Millisecond, currentTime, nextRun, time.UTC)
 
 	got := out.String()
 	for _, want := range []string{
@@ -852,11 +1201,11 @@ func TestSyncAllAndProcessHelpers(t *testing.T) {
 		d.plex = fakePlexService{findCollectionByName: func(_ context.Context, name string) (string, error) {
 			return "", errors.New(name + " failed")
 		}}
-		err := d.syncAll(true, true, false)
+		err := d.syncAll(true, true, false, d.cfg.MaxItemsProcessedPerRun)
 		if err == nil || !strings.Contains(err.Error(), "tv sync") || !strings.Contains(err.Error(), "movie sync") {
 			t.Fatalf("syncAll() error = %v", err)
 		}
-		if !strings.Contains(out.String(), "=== TV Sync ===") || !strings.Contains(out.String(), "=== Movie Sync ===") {
+		if !strings.Contains(out.String(), "TV Sync") || !strings.Contains(out.String(), "Movie Sync") {
 			t.Fatalf("syncAll() output = %q", out.String())
 		}
 	})
@@ -1075,21 +1424,52 @@ func (f fakeRadarrService) SearchMovie(ctx context.Context, movieID int64) error
 
 func baseConfig() *config.Config {
 	return &config.Config{
-		PlexURL:             "http://plex",
-		PlexToken:           "token",
-		TVCollectionName:    "TV",
-		MovieCollectionName: "Movies",
-		SonarrURL:           "http://sonarr",
-		SonarrAPIKey:        "sonarr-key",
-		RadarrURL:           "http://radarr",
-		RadarrAPIKey:        "radarr-key",
+		PlexURL:                 "http://plex",
+		PlexToken:               "token",
+		MaxItemsProcessedPerRun: 30,
+		TVCollectionName:        "TV",
+		MovieCollectionName:     "Movies",
+		SonarrURL:               "http://sonarr",
+		SonarrAPIKey:            "sonarr-key",
+		RadarrURL:               "http://radarr",
+		RadarrAPIKey:            "radarr-key",
 	}
 }
 
 func newTestDeps(cfg *config.Config) (*deps, *bytes.Buffer, *bytes.Buffer) {
 	out := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
-	return &deps{cfg: cfg, out: out, errOut: errOut, ui: ui.New(out)}, out, errOut
+	return &deps{cfg: cfg, out: out, errOut: errOut, ui: ui.New(out), batchState: &memoryBatchStateStore{completed: map[string][]string{}}}, out, errOut
+}
+
+type memoryBatchStateStore struct {
+	completed map[string][]string
+}
+
+func (m *memoryBatchStateStore) Completed(scope string) ([]string, error) {
+	if m == nil {
+		return nil, nil
+	}
+	return append([]string(nil), m.completed[scope]...), nil
+}
+
+func (m *memoryBatchStateStore) SetCompleted(scope string, completed []string) error {
+	if m == nil {
+		return nil
+	}
+	if m.completed == nil {
+		m.completed = map[string][]string{}
+	}
+	m.completed[scope] = append([]string(nil), completed...)
+	return nil
+}
+
+func (m *memoryBatchStateStore) ClearScope(scope string) error {
+	if m == nil || m.completed == nil {
+		return nil
+	}
+	delete(m.completed, scope)
+	return nil
 }
 
 var _ io.Writer = (*bytes.Buffer)(nil)

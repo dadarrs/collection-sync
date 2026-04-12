@@ -26,6 +26,7 @@ go.work.sum
 
 # env file
 .env
+.collection-sync-state.json
 
 # Editor/IDE
 # .idea/
