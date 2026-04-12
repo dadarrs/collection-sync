@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -25,6 +27,8 @@ const (
 	showBTitle         = "Show B"
 	queuedRadarrSearch = "queued Radarr search"
 	testMoviesRootPath = "/movies"
+	testSignalDelay    = 10 * time.Millisecond
+	testTimeZone       = "America/New_York"
 )
 
 func TestPrintSyncTargets(t *testing.T) {
@@ -620,6 +624,52 @@ func TestRunCommandDryRunSinglePass(t *testing.T) {
 	}
 }
 
+func TestRunCommandIntervalWaitStatus(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Interval = "1ms"
+	cfg.MovieCollectionName = ""
+	d, out, _ := newTestDeps(cfg)
+	t.Setenv("TZ", testTimeZone)
+
+	callCount := 0
+	d.plex = fakePlexService{
+		findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+		getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+			callCount++
+			if callCount == 1 {
+				go func() {
+					time.Sleep(testSignalDelay)
+					_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
+				}()
+			}
+			return nil, nil
+		},
+	}
+	d.sonarr = fakeSonarrService{}
+
+	if err := (&RunCmd{DryRun: true}).Run(d); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"interval: 1ms (next scheduled time:",
+		"[dry-run] previewing changes only",
+		"waiting for next run",
+		"last run took:",
+		"current time:",
+		"next scheduled time:",
+		"shutting down",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Run() output = %q, want substring %q", got, want)
+		}
+	}
+	if strings.Contains(got, " UTC") {
+		t.Fatalf("Run() output = %q, want configured timezone output", got)
+	}
+}
+
 func TestListCommandsRenderTables(t *testing.T) {
 	cfg := baseConfig()
 	d, out, _ := newTestDeps(cfg)
@@ -696,7 +746,7 @@ func TestRunContinuouslyAndWriters(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := (&RunCmd{}).runContinuously(ctx, d, false, false, time.Minute, make(chan time.Time)); err != nil {
+	if err := (&RunCmd{}).runContinuously(ctx, d, false, false, time.Minute, time.UTC, make(chan time.Time)); err != nil {
 		t.Fatalf("runContinuously() error = %v", err)
 	}
 	if !strings.Contains(out.String(), "shutting down") {
@@ -716,12 +766,84 @@ func TestRunContinuouslyAndWriters(t *testing.T) {
 		},
 	}
 	d.sonarr = fakeSonarrService{}
-	if err := (&RunCmd{DryRun: true}).runContinuously(ctx, d, true, false, time.Minute, ticks); err != nil {
+	if err := (&RunCmd{DryRun: true}).runContinuously(ctx, d, true, false, time.Minute, time.UTC, ticks); err != nil {
 		t.Fatalf("runContinuously(tick) error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "sync started") || !strings.Contains(got, "next run") {
+	if got := out.String(); !strings.Contains(got, "sync started") || !strings.Contains(got, "last run took") || !strings.Contains(got, "current time") || !strings.Contains(got, "next scheduled time") {
 		t.Fatalf("runContinuously(tick) output = %q", got)
 	}
+}
+
+func TestRunLocation(t *testing.T) {
+	t.Run("defaults to UTC", func(t *testing.T) {
+		t.Setenv("TZ", "")
+		if got := runLocation(); got != time.UTC {
+			t.Fatalf("runLocation() = %v, want UTC", got)
+		}
+	})
+
+	t.Run("uses configured timezone", func(t *testing.T) {
+		t.Setenv("TZ", testTimeZone)
+		if got := runLocation().String(); got != testTimeZone {
+			t.Fatalf("runLocation() = %q, want %s", got, testTimeZone)
+		}
+	})
+
+	t.Run("falls back to UTC for invalid timezone", func(t *testing.T) {
+		t.Setenv("TZ", "Mars/Olympus_Mons")
+		if got := runLocation(); got != time.UTC {
+			t.Fatalf("runLocation() = %v, want UTC", got)
+		}
+	})
+}
+
+func TestPrintWaitStatus(t *testing.T) {
+	out := &bytes.Buffer{}
+	currentTime := time.Date(2026, time.April, 12, 4, 11, 28, 0, time.UTC)
+	nextRun := currentTime.Add(10 * time.Minute)
+
+	printWaitStatus(out, 1500*time.Millisecond, currentTime, nextRun, time.UTC)
+
+	got := out.String()
+	for _, want := range []string{
+		"waiting for next run",
+		"last run took: 1.5s",
+		"current time: 2026-04-12 04:11:28 +00:00 UTC",
+		"next scheduled time: 2026-04-12 04:21:28 +00:00 UTC",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("printWaitStatus() output = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestFormatRunTime(t *testing.T) {
+	loc, err := time.LoadLocation(testTimeZone)
+	if err != nil {
+		t.Fatalf("LoadLocation() error = %v", err)
+	}
+
+	got := formatRunTime(time.Date(2026, time.April, 12, 4, 11, 28, 0, time.UTC), loc)
+	want := "2026-04-12 00:11:28 -04:00 EDT"
+	if got != want {
+		t.Fatalf("formatRunTime() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatRunDuration(t *testing.T) {
+	t.Run("keeps sub-millisecond precision", func(t *testing.T) {
+		got := formatRunDuration(326921 * time.Nanosecond)
+		if got != "326.921µs" {
+			t.Fatalf("formatRunDuration() = %q, want %q", got, "326.921µs")
+		}
+	})
+
+	t.Run("rounds to milliseconds", func(t *testing.T) {
+		got := formatRunDuration(1501 * time.Millisecond)
+		if got != "1.501s" {
+			t.Fatalf("formatRunDuration() = %q, want %q", got, "1.501s")
+		}
+	})
 }
 
 func TestSyncAllAndProcessHelpers(t *testing.T) {
