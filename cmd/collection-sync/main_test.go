@@ -461,6 +461,110 @@ func TestMovieSyncBatchAdvancesAcrossRuns(t *testing.T) {
 	}
 }
 
+func TestTVSyncBatchPersistsOnlySuccessfulTargets(t *testing.T) {
+	cfg := baseConfig()
+	cfg.MaxItemsProcessedPerRun = 2
+	d, out, _ := newTestDeps(cfg)
+	d.plex = fakePlexService{
+		findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+		getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+			return []plexpkg.Item{
+				{Title: showATitle, Type: "show", TVDBID: 1},
+				{Title: showBTitle, Type: "show", TVDBID: 2},
+			}, nil
+		},
+	}
+	d.sonarr = fakeSonarrService{
+		findSeries: func(context.Context, string, int64) (*sonarrpkg.SeriesMatch, error) {
+			return nil, sonarrpkg.ErrSeriesNotFound
+		},
+		resolveAddSeriesDefaults: func(context.Context, string, string) (sonarrpkg.AddSeriesDefaults, error) {
+			return sonarrpkg.AddSeriesDefaults{RootFolderPath: "/tv", QualityProfileName: "HD"}, nil
+		},
+		createSeries: func(_ context.Context, request sonarrpkg.CreateSeriesRequest, _ sonarrpkg.AddSeriesDefaults) (*starrsonarr.Series, error) {
+			if request.Title == showBTitle {
+				return nil, errors.New("create failed")
+			}
+			return &starrsonarr.Series{Title: request.Title}, nil
+		},
+	}
+
+	err := (&SyncTVCmd{}).Run(d)
+	if err == nil || !strings.Contains(err.Error(), "create failed") {
+		t.Fatalf("first SyncTVCmd.Run() error = %v, want create failure", err)
+	}
+
+	completed, err := d.batchState.Completed(batchScopeTV)
+	if err != nil {
+		t.Fatalf("Completed(%q) error = %v", batchScopeTV, err)
+	}
+	if got, want := completed, []string{sonarrLookupKey(showATitle, 1)}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("Completed(%q) = %v, want %v", batchScopeTV, got, want)
+	}
+
+	out.Reset()
+	err = (&SyncTVCmd{}).Run(d)
+	if err == nil || !strings.Contains(err.Error(), "create failed") {
+		t.Fatalf("second SyncTVCmd.Run() error = %v, want create failure", err)
+	}
+	second := out.String()
+	if !strings.Contains(second, showBTitle) || strings.Contains(second, showATitle) {
+		t.Fatalf("second SyncTVCmd.Run() processed wrong titles: %q", second)
+	}
+}
+
+func TestMovieSyncBatchPersistsOnlySuccessfulTargets(t *testing.T) {
+	cfg := baseConfig()
+	cfg.MaxItemsProcessedPerRun = 2
+	d, out, _ := newTestDeps(cfg)
+	d.plex = fakePlexService{
+		findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+		getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+			return []plexpkg.Item{
+				{Title: movieATitle, TMDBID: 1},
+				{Title: movieBTitle, TMDBID: 2},
+			}, nil
+		},
+	}
+	d.radarr = fakeRadarrService{
+		findMovie: func(context.Context, string, int64) (*radarrpkg.MovieMatch, error) {
+			return nil, radarrpkg.ErrMovieNotFound
+		},
+		resolveAddMovieDefaults: func(context.Context, string, string) (radarrpkg.AddMovieDefaults, error) {
+			return radarrpkg.AddMovieDefaults{RootFolderPath: testMoviesRootPath, QualityProfileName: "HD"}, nil
+		},
+		createMovie: func(_ context.Context, request radarrpkg.CreateMovieRequest, _ radarrpkg.AddMovieDefaults) (*starrradarr.Movie, error) {
+			if request.Title == movieBTitle {
+				return nil, errors.New("create failed")
+			}
+			return &starrradarr.Movie{Title: request.Title}, nil
+		},
+	}
+
+	err := (&SyncMoviesCmd{}).Run(d)
+	if err == nil || !strings.Contains(err.Error(), "create failed") {
+		t.Fatalf("first SyncMoviesCmd.Run() error = %v, want create failure", err)
+	}
+
+	completed, err := d.batchState.Completed(batchScopeMovies)
+	if err != nil {
+		t.Fatalf("Completed(%q) error = %v", batchScopeMovies, err)
+	}
+	if got, want := completed, []string{radarrLookupKey(movieATitle, 1)}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("Completed(%q) = %v, want %v", batchScopeMovies, got, want)
+	}
+
+	out.Reset()
+	err = (&SyncMoviesCmd{}).Run(d)
+	if err == nil || !strings.Contains(err.Error(), "create failed") {
+		t.Fatalf("second SyncMoviesCmd.Run() error = %v, want create failure", err)
+	}
+	second := out.String()
+	if !strings.Contains(second, movieBTitle) || strings.Contains(second, movieATitle) {
+		t.Fatalf("second SyncMoviesCmd.Run() processed wrong titles: %q", second)
+	}
+}
+
 func TestRunCommandUsesSharedBatchBudget(t *testing.T) {
 	cfg := baseConfig()
 	cfg.MaxItemsProcessedPerRun = 1

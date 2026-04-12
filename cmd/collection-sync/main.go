@@ -535,8 +535,15 @@ func (d *deps) runTVSync(ctx context.Context, rowNumber *int, dryRun bool, limit
 		return 0, err
 	}
 	printSyncBatchSummary(d.output(), d.ui, "Sonarr", plan.stats)
-	processed, runErr := d.executePlannedTVSyncTargets(ctx, plan.selected, dryRun)
-	stateErr := d.persistBatchState(batchScopeTV, plan.stats, plan.completed, processed, dryRun, useCursor)
+	processed, succeeded, runErr := d.executePlannedTVSyncTargets(ctx, plan.selected, dryRun)
+	stateErr := d.persistBatchState(
+		batchScopeTV,
+		plan.stats,
+		completedBatchKeysForPersistence(plan.completed, plan.selected, succeeded, func(entry tvSyncPlanEntry) string { return entry.key }),
+		processed,
+		dryRun,
+		useCursor,
+	)
 	return processed, errors.Join(errors.Join(plan.evalErrs...), runErr, stateErr)
 }
 
@@ -560,8 +567,15 @@ func (d *deps) runMovieSync(ctx context.Context, rowNumber *int, dryRun bool, li
 		return 0, err
 	}
 	printSyncBatchSummary(d.output(), d.ui, "Radarr", plan.stats)
-	processed, runErr := d.executePlannedMovieSyncTargets(ctx, plan.selected, dryRun)
-	stateErr := d.persistBatchState(batchScopeMovies, plan.stats, plan.completed, processed, dryRun, useCursor)
+	processed, succeeded, runErr := d.executePlannedMovieSyncTargets(ctx, plan.selected, dryRun)
+	stateErr := d.persistBatchState(
+		batchScopeMovies,
+		plan.stats,
+		completedBatchKeysForPersistence(plan.completed, plan.selected, succeeded, func(entry movieSyncPlanEntry) string { return entry.key }),
+		processed,
+		dryRun,
+		useCursor,
+	)
 	return processed, errors.Join(errors.Join(plan.evalErrs...), runErr, stateErr)
 }
 
@@ -754,11 +768,12 @@ func (d *deps) executeTVSyncTargets(ctx context.Context, targets []tvSyncTarget,
 	return len(targets), nil
 }
 
-func (d *deps) executePlannedTVSyncTargets(ctx context.Context, entries []tvSyncPlanEntry, dryRun bool) (int, error) {
+func (d *deps) executePlannedTVSyncTargets(ctx context.Context, entries []tvSyncPlanEntry, dryRun bool) (int, []string, error) {
 	statusCounts := make(map[string]int)
 	var defaults sonarr.AddSeriesDefaults
 	defaultsResolved := false
 	var errs []error
+	succeeded := make([]string, 0, len(entries))
 
 	t := d.ui.NewTable([]string{"#", "SHOW", "TVDB", "MONITOR", "STATUS", "DETAIL"}, 4)
 	progress := d.ui.NewProgress(d.errorOutput(), "Processing Sonarr sync targets", len(entries))
@@ -769,6 +784,9 @@ func (d *deps) executePlannedTVSyncTargets(ctx context.Context, entries []tvSync
 		status, detail, syncErr := d.syncTVTarget(ctx, entry.target, entry.lookup, &defaults, &defaultsResolved, dryRun)
 		statusCounts[status]++
 		errs = appendError(errs, syncErr)
+		if syncErr == nil {
+			succeeded = append(succeeded, entry.key)
+		}
 		t.AddRow(ui.FormatInt(int64(i+1)), entry.target.Title, ui.FormatInt(entry.target.TVDBID), entry.target.monitorDescription(), status, detail)
 		progress.Update(i + 1)
 	}
@@ -779,9 +797,9 @@ func (d *deps) executePlannedTVSyncTargets(ctx context.Context, entries []tvSync
 	d.println(d.ui.Fields("", []ui.Field{{Label: labelProcessedThisRun, Value: fmt.Sprintf("%d shows", len(entries))}}))
 	printTVSyncSummary(d.output(), d.ui, statusCounts)
 	if len(errs) > 0 {
-		return len(entries), errors.Join(errs...)
+		return len(entries), succeeded, errors.Join(errs...)
 	}
-	return len(entries), nil
+	return len(entries), succeeded, nil
 }
 
 func (d *deps) executeMovieSyncTargets(ctx context.Context, targets []movieSyncTarget, dryRun bool) (int, error) {
@@ -815,11 +833,12 @@ func (d *deps) executeMovieSyncTargets(ctx context.Context, targets []movieSyncT
 	return len(targets), nil
 }
 
-func (d *deps) executePlannedMovieSyncTargets(ctx context.Context, entries []movieSyncPlanEntry, dryRun bool) (int, error) {
+func (d *deps) executePlannedMovieSyncTargets(ctx context.Context, entries []movieSyncPlanEntry, dryRun bool) (int, []string, error) {
 	statusCounts := make(map[string]int)
 	var defaults radarr.AddMovieDefaults
 	defaultsResolved := false
 	var errs []error
+	succeeded := make([]string, 0, len(entries))
 
 	t := d.ui.NewTable([]string{"#", "TITLE", "TMDB", "STATUS", "DETAIL"}, 3)
 	progress := d.ui.NewProgress(d.errorOutput(), "Processing Radarr sync targets", len(entries))
@@ -830,6 +849,9 @@ func (d *deps) executePlannedMovieSyncTargets(ctx context.Context, entries []mov
 		status, detail, syncErr := d.syncMovieTarget(ctx, entry.target, entry.lookup, &defaults, &defaultsResolved, dryRun)
 		statusCounts[status]++
 		errs = appendError(errs, syncErr)
+		if syncErr == nil {
+			succeeded = append(succeeded, entry.key)
+		}
 		t.AddRow(ui.FormatInt(int64(i+1)), entry.target.Title, ui.FormatInt(entry.target.TMDBID), status, detail)
 		progress.Update(i + 1)
 	}
@@ -840,9 +862,9 @@ func (d *deps) executePlannedMovieSyncTargets(ctx context.Context, entries []mov
 	d.println(d.ui.Fields("", []ui.Field{{Label: labelProcessedThisRun, Value: fmt.Sprintf(valueMoviesFormat, len(entries))}}))
 	printMovieSyncSummary(d.output(), d.ui, statusCounts)
 	if len(errs) > 0 {
-		return len(entries), errors.Join(errs...)
+		return len(entries), succeeded, errors.Join(errs...)
 	}
-	return len(entries), nil
+	return len(entries), succeeded, nil
 }
 
 func (d *deps) completedBatchKeys(scope string, enabled bool) ([]string, error) {
@@ -1503,6 +1525,33 @@ func selectBatchCycle[T any](entries []T, limit int, completed []string, key fun
 		completed: updatedCompleted,
 		remaining: len(pending) - len(selected),
 	}
+}
+
+func completedBatchKeysForPersistence[T any](completed []string, selected []T, succeeded []string, key func(T) string) []string {
+	if len(completed) == 0 || len(selected) == 0 {
+		return append([]string(nil), completed...)
+	}
+
+	selectedSet := make(map[string]struct{}, len(selected))
+	for _, entry := range selected {
+		selectedSet[key(entry)] = struct{}{}
+	}
+
+	succeededSet := make(map[string]struct{}, len(succeeded))
+	for _, entryKey := range succeeded {
+		succeededSet[entryKey] = struct{}{}
+	}
+
+	filtered := make([]string, 0, len(completed))
+	for _, entryKey := range completed {
+		if _, ok := selectedSet[entryKey]; ok {
+			if _, ok := succeededSet[entryKey]; !ok {
+				continue
+			}
+		}
+		filtered = append(filtered, entryKey)
+	}
+	return filtered
 }
 
 func (t tvSyncTarget) seasonNumbers() []int {
