@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.3](https://github.com/dadarrs/collection-sync/compare/v0.1.2...v0.1.3) (2026-04-12)
+
+
+### Features
+
+* cap Sonarr/Radarr sync targets per run ([#30](https://github.com/dadarrs/collection-sync/issues/30)) ([1d88e8d](https://github.com/dadarrs/collection-sync/commit/1d88e8df803660aa328b5a486aadfbb42e9f563e))
+
+
+### Bug Fixes
+
+* add missing timezone data import for time handling ([#33](https://github.com/dadarrs/collection-sync/issues/33)) ([6078466](https://github.com/dadarrs/collection-sync/commit/60784660632adb1de61b3d98515015f2ee6741de))
+
 ## [0.1.2](https://github.com/dadarrs/collection-sync/compare/v0.1.1...v0.1.2) (2026-04-12)
 
 
