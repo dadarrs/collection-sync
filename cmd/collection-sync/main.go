@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/alecthomas/kong"
 	starrradarr "golift.io/starr/radarr"
