@@ -29,7 +29,7 @@ var version = "dev"
 
 const (
 	totalMoviesFormat   = "\nTotal: %d movies\n"
-	runTimeFormat       = "2006-01-02 15:04:05 -07:00 MST"
+	intervalTimeFormat  = "2006-01-02 15:04:05 -07:00 MST"
 	statusAdded         = "added"
 	statusExisting      = "existing"
 	statusFailed        = "failed"
@@ -167,7 +167,7 @@ func runLocation() *time.Location {
 }
 
 func formatRunTime(t time.Time, loc *time.Location) string {
-	return t.In(loc).Format(runTimeFormat)
+	return t.In(loc).Format(intervalTimeFormat)
 }
 
 func formatRunDuration(d time.Duration) string {
