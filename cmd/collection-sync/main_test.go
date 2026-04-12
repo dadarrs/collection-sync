@@ -767,6 +767,35 @@ func TestPrintWaitStatus(t *testing.T) {
 	}
 }
 
+func TestFormatRunTime(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("LoadLocation() error = %v", err)
+	}
+
+	got := formatRunTime(time.Date(2026, time.April, 12, 4, 11, 28, 0, time.UTC), loc)
+	want := "2026-04-12 00:11:28 -04:00 EDT"
+	if got != want {
+		t.Fatalf("formatRunTime() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatRunDuration(t *testing.T) {
+	t.Run("keeps sub-millisecond precision", func(t *testing.T) {
+		got := formatRunDuration(326921 * time.Nanosecond)
+		if got != "326.921µs" {
+			t.Fatalf("formatRunDuration() = %q, want %q", got, "326.921µs")
+		}
+	})
+
+	t.Run("rounds to milliseconds", func(t *testing.T) {
+		got := formatRunDuration(1501 * time.Millisecond)
+		if got != "1.501s" {
+			t.Fatalf("formatRunDuration() = %q, want %q", got, "1.501s")
+		}
+	})
+}
+
 func TestSyncAllAndProcessHelpers(t *testing.T) {
 	t.Run("sync all joins errors and prints headers", func(t *testing.T) {
 		d, out, _ := newTestDeps(baseConfig())
