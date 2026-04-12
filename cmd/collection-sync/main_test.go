@@ -27,6 +27,7 @@ const (
 	showBTitle         = "Show B"
 	queuedRadarrSearch = "queued Radarr search"
 	testMoviesRootPath = "/movies"
+	testSignalDelay    = 10 * time.Millisecond
 	testTimeZone       = "America/New_York"
 )
 
@@ -637,7 +638,7 @@ func TestRunCommandIntervalWaitStatus(t *testing.T) {
 			callCount++
 			if callCount == 1 {
 				go func() {
-					time.Sleep(10 * time.Millisecond)
+					time.Sleep(testSignalDelay)
 					_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
 				}()
 			}
