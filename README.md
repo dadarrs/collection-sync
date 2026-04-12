@@ -107,15 +107,17 @@ docker compose run --rm collection-sync tv sync --dry-run
 
 | Command | Purpose |
 | --- | --- |
-| `run [--dry-run]` | Sync both TV and movie collections in one command. Skips whichever lacks API config. Repeats on `INTERVAL` if set. |
+| `run [--dry-run]` | Sync both TV and movie collections in one command. Skips whichever lacks API config. Repeats on `INTERVAL` if set. Applies one shared `MAX_ITEMS_PROCESSED_PER_RUN` budget across TV first, then movies. |
 | `tv list` | List shows and seasons in `PLEX_TV_COLLECTION`. |
 | `tv check` | Compare the TV collection against Sonarr and report status per item. |
-| `tv sync [number] [--dry-run]` | Add missing TV items to Sonarr or update monitoring for existing matches. Pass `number` to sync a single row from `tv list`. |
+| `tv sync [number] [--dry-run]` | Add missing TV items to Sonarr or update monitoring for existing matches. Without `number`, evaluates the full deduped target set and processes only the current batch of eligible targets. Pass `number` to sync a single row from `tv list`. |
 | `movies list` | List movies in `PLEX_MOVIE_COLLECTION`. |
 | `movies check` | Compare the movie collection against Radarr and report status per item. |
-| `movies sync [number] [--dry-run]` | Add missing movies to Radarr or update monitoring for existing matches. Pass `number` to sync a single row from `movies list`. |
+| `movies sync [number] [--dry-run]` | Add missing movies to Radarr or update monitoring for existing matches. Without `number`, evaluates the full deduped target set and processes only the current batch of eligible targets. Pass `number` to sync a single row from `movies list`. |
 
 `--dry-run` previews changes without writing to Sonarr or Radarr.
+
+All sync commands still fetch the full Plex collection details first. Batching only limits which eligible Sonarr or Radarr targets are processed in a given run. Already-satisfied existing items do not consume the batch budget.
 
 ## Configuration
 
@@ -137,7 +139,10 @@ Copy `.env.example` to `.env` and set the variables below.
 | `RADARR_QUALITY_PROFILE` | `movies sync` | Optional. If unset, the app uses the only available Radarr quality profile. |
 | `SEARCH_ADDED` | `sync` commands | Optional. When `true`, queue a Sonarr or Radarr search after content is added or newly enabled for monitoring. |
 | `SEARCH_EXISTING` | `sync` commands | Optional. When `true`, queue a Sonarr or Radarr search even when the requested item already exists. |
+| `MAX_ITEMS_PROCESSED_PER_RUN` | `sync` commands, `run` | Optional. Defaults to `30`. Limits how many eligible Sonarr or Radarr targets are processed in a single run after the full collection is evaluated. |
 | `INTERVAL` | `run` | Optional. Repeat the sync on this interval, for example `10m`, `1h`, `6h`, `3d`. If unset, `run` syncs once and exits. |
 | `TZ` | `run` | Optional. Time zone used when printing interval status timestamps. Uses UTC when unset or invalid. |
 
 Reliable matching depends on Plex metadata exposing TVDB IDs for TV items and TMDB IDs for movies.
+
+The app stores batch progress in `.collection-sync-state.json` in the working directory so later runs can continue with the remaining eligible targets in the current cycle.

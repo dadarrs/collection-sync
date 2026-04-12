@@ -26,6 +26,18 @@ func TestLoadBoolEnvTrimsQuotes(t *testing.T) {
 	}
 }
 
+func TestLoadIntEnvTrimsQuotes(t *testing.T) {
+	t.Setenv("MAX_ITEMS_PROCESSED_PER_RUN", `"45"`)
+
+	got, err := loadIntEnv("MAX_ITEMS_PROCESSED_PER_RUN", 30)
+	if err != nil {
+		t.Fatalf("loadIntEnv() error = %v", err)
+	}
+	if got != 45 {
+		t.Fatalf("loadIntEnv() = %d, want 45", got)
+	}
+}
+
 func TestLoadUsesQuotedRuntimeEnv(t *testing.T) {
 	t.Setenv("PLEX_URL", "http://example")
 	t.Setenv("PLEX_TOKEN", "token")
@@ -43,6 +55,7 @@ func TestLoadUsesQuotedRuntimeEnv(t *testing.T) {
 		"RADARR_QUALITY_PROFILE",
 		"SEARCH_ADDED",
 		"SEARCH_EXISTING",
+		"MAX_ITEMS_PROCESSED_PER_RUN",
 		"INTERVAL",
 	)
 
