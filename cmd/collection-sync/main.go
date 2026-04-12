@@ -35,7 +35,10 @@ const (
 	batchScopeMovies          = "movies"
 	batchScopeTV              = "tv"
 	batchStateFileName        = ".collection-sync-state.json"
+	labelProcessedThisRun     = "Processed this run"
+	labelTotal                = "Total"
 	intervalTimeFormat        = "2006-01-02 15:04:05 -07:00 MST"
+	valueMoviesFormat         = "%d movies"
 	errUnexpectedRadarrLookup = "unexpected empty Radarr lookup result"
 	errUnexpectedSonarrLookup = "unexpected empty Sonarr lookup result"
 	statusAdded               = "added"
@@ -272,7 +275,7 @@ func (c *ListMoviesCmd) Run(d *deps) error {
 	}
 	d.println(t.Render())
 	d.println()
-	d.println(d.ui.Fields("", []ui.Field{{Label: "Total", Value: fmt.Sprintf("%d movies", len(items))}}))
+	d.println(d.ui.Fields("", []ui.Field{{Label: labelTotal, Value: fmt.Sprintf(valueMoviesFormat, len(items))}}))
 	return nil
 }
 
@@ -305,7 +308,7 @@ func (c *ListTVCmd) Run(d *deps) error {
 	}
 	d.println(t.Render())
 	d.println()
-	d.println(d.ui.Fields("", []ui.Field{{Label: "Total", Value: fmt.Sprintf("%d items", len(items))}}))
+	d.println(d.ui.Fields("", []ui.Field{{Label: labelTotal, Value: fmt.Sprintf("%d items", len(items))}}))
 	return nil
 }
 
@@ -350,7 +353,7 @@ func (c *CheckMoviesCmd) Run(d *deps) error {
 	}
 	d.println(t.Render())
 	d.println()
-	d.println(d.ui.Fields("", []ui.Field{{Label: "Total", Value: fmt.Sprintf("%d movies", len(items))}}))
+	d.println(d.ui.Fields("", []ui.Field{{Label: labelTotal, Value: fmt.Sprintf(valueMoviesFormat, len(items))}}))
 	printMovieCheckSummary(d.output(), d.ui, statusCounts)
 	return nil
 }
@@ -384,7 +387,7 @@ func (c *CheckTVCmd) Run(d *deps) error {
 	}
 	d.println(t.Render())
 	d.println()
-	d.println(d.ui.Fields("", []ui.Field{{Label: "Total", Value: fmt.Sprintf("%d items", len(items))}}))
+	d.println(d.ui.Fields("", []ui.Field{{Label: labelTotal, Value: fmt.Sprintf("%d items", len(items))}}))
 	printTVCheckSummary(d.output(), d.ui, statusCounts)
 	return nil
 }
@@ -743,7 +746,7 @@ func (d *deps) executeTVSyncTargets(ctx context.Context, targets []tvSyncTarget,
 		d.println(t.Render())
 	}
 	d.println()
-	d.println(d.ui.Fields("", []ui.Field{{Label: "Processed this run", Value: fmt.Sprintf("%d shows", len(targets))}}))
+	d.println(d.ui.Fields("", []ui.Field{{Label: labelProcessedThisRun, Value: fmt.Sprintf("%d shows", len(targets))}}))
 	printTVSyncSummary(d.output(), d.ui, statusCounts)
 	if len(errs) > 0 {
 		return len(targets), errors.Join(errs...)
@@ -773,7 +776,7 @@ func (d *deps) executePlannedTVSyncTargets(ctx context.Context, entries []tvSync
 		d.println(t.Render())
 	}
 	d.println()
-	d.println(d.ui.Fields("", []ui.Field{{Label: "Processed this run", Value: fmt.Sprintf("%d shows", len(entries))}}))
+	d.println(d.ui.Fields("", []ui.Field{{Label: labelProcessedThisRun, Value: fmt.Sprintf("%d shows", len(entries))}}))
 	printTVSyncSummary(d.output(), d.ui, statusCounts)
 	if len(errs) > 0 {
 		return len(entries), errors.Join(errs...)
@@ -804,7 +807,7 @@ func (d *deps) executeMovieSyncTargets(ctx context.Context, targets []movieSyncT
 		d.println(t.Render())
 	}
 	d.println()
-	d.println(d.ui.Fields("", []ui.Field{{Label: "Processed this run", Value: fmt.Sprintf("%d movies", len(targets))}}))
+	d.println(d.ui.Fields("", []ui.Field{{Label: labelProcessedThisRun, Value: fmt.Sprintf(valueMoviesFormat, len(targets))}}))
 	printMovieSyncSummary(d.output(), d.ui, statusCounts)
 	if len(errs) > 0 {
 		return len(targets), errors.Join(errs...)
@@ -834,7 +837,7 @@ func (d *deps) executePlannedMovieSyncTargets(ctx context.Context, entries []mov
 		d.println(t.Render())
 	}
 	d.println()
-	d.println(d.ui.Fields("", []ui.Field{{Label: "Processed this run", Value: fmt.Sprintf("%d movies", len(entries))}}))
+	d.println(d.ui.Fields("", []ui.Field{{Label: labelProcessedThisRun, Value: fmt.Sprintf(valueMoviesFormat, len(entries))}}))
 	printMovieSyncSummary(d.output(), d.ui, statusCounts)
 	if len(errs) > 0 {
 		return len(entries), errors.Join(errs...)

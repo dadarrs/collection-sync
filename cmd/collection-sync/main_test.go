@@ -32,6 +32,7 @@ const (
 	showATitle               = "Show A"
 	showBTitle               = "Show B"
 	queuedRadarrSearch       = "queued Radarr search"
+	radarrTargetSummaryLabel = "Radarr target summary"
 	runErrorFmt              = "Run() error = %v"
 	testMoviesRootPath       = "/movies"
 	testSignalDelay          = 10 * time.Millisecond
@@ -440,7 +441,7 @@ func TestMovieSyncBatchAdvancesAcrossRuns(t *testing.T) {
 		t.Fatalf("first SyncMoviesCmd.Run() error = %v", err)
 	}
 	first := out.String()
-	if !strings.Contains(first, "Radarr target summary") || !strings.Contains(first, "deduped targets: 3") || !strings.Contains(first, "eligible: 3") || !strings.Contains(first, "processing this run: 2") || !strings.Contains(first, "remaining after this run: 1") {
+	if !strings.Contains(first, radarrTargetSummaryLabel) || !strings.Contains(first, "deduped targets: 3") || !strings.Contains(first, "eligible: 3") || !strings.Contains(first, "processing this run: 2") || !strings.Contains(first, "remaining after this run: 1") {
 		t.Fatalf("first SyncMoviesCmd.Run() output = %q", first)
 	}
 	if !strings.Contains(first, movieATitle) || !strings.Contains(first, movieBTitle) || strings.Contains(first, movieCTitle) {
@@ -452,7 +453,7 @@ func TestMovieSyncBatchAdvancesAcrossRuns(t *testing.T) {
 		t.Fatalf("second SyncMoviesCmd.Run() error = %v", err)
 	}
 	second := out.String()
-	if !strings.Contains(second, "Radarr target summary") || !strings.Contains(second, "deduped targets: 3") || !strings.Contains(second, "eligible: 3") || !strings.Contains(second, "processing this run: 1") || !strings.Contains(second, "remaining after this run: 0") {
+	if !strings.Contains(second, radarrTargetSummaryLabel) || !strings.Contains(second, "deduped targets: 3") || !strings.Contains(second, "eligible: 3") || !strings.Contains(second, "processing this run: 1") || !strings.Contains(second, "remaining after this run: 0") {
 		t.Fatalf("second SyncMoviesCmd.Run() output = %q", second)
 	}
 	if !strings.Contains(second, movieCTitle) || strings.Contains(second, movieATitle) || strings.Contains(second, movieBTitle) {
@@ -507,7 +508,7 @@ func TestRunCommandUsesSharedBatchBudget(t *testing.T) {
 	if !strings.Contains(got, "Sonarr target summary") || !strings.Contains(got, "deduped targets: 1") || !strings.Contains(got, "eligible: 1") || !strings.Contains(got, "processing this run: 1") || !strings.Contains(got, "remaining after this run: 0") {
 		t.Fatalf("Run() output missing tv batch summary: %q", got)
 	}
-	if !strings.Contains(got, "Radarr target summary") || !strings.Contains(got, "deduped targets: 1") || !strings.Contains(got, "eligible: 1") || !strings.Contains(got, "processing this run: 0") || !strings.Contains(got, "remaining after this run: 1") {
+	if !strings.Contains(got, radarrTargetSummaryLabel) || !strings.Contains(got, "deduped targets: 1") || !strings.Contains(got, "eligible: 1") || !strings.Contains(got, "processing this run: 0") || !strings.Contains(got, "remaining after this run: 1") {
 		t.Fatalf("Run() output missing movie batch summary: %q", got)
 	}
 }
