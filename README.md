@@ -52,6 +52,7 @@ make test-cover
 make test-cover-html
 make test-cover-check
 make lint
+make lint-fix
 make run ARGS='tv list'
 make docker-build
 make docker-run ARGS='movies list'

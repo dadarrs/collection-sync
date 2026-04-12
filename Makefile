@@ -14,7 +14,7 @@ GIT_TAG ?= $(shell git describe --exact-match --tags --match 'v*' 2>/dev/null)
 GIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 VERSION ?= $(if $(GIT_TAG),$(patsubst v%,%,$(GIT_TAG)),dev-$(GIT_SHA))
 
-.PHONY: help build test test-cover test-cover-html test-cover-check lint lint-install fmt tidy run docker-build docker-run clean
+.PHONY: help build test test-cover test-cover-html test-cover-check lint lint-fix lint-install fmt tidy run docker-build docker-run clean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_.-]+:.*## / {printf "%-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -39,6 +39,9 @@ test-cover-check: ## Enforce overall and package-level coverage gates
 
 lint: ## Run golangci-lint using the repository config
 	$(GOLANGCI_LINT) run --timeout=5m ./...
+
+lint-fix: ## Run golangci-lint and apply supported fixes
+	$(GOLANGCI_LINT) run --fix --timeout=5m ./...
 
 lint-install: ## Install the pinned golangci-lint version locally
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
