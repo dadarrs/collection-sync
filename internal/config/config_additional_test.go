@@ -26,7 +26,6 @@ var configEnvNames = []string{
 	"SEARCH_ADDED",
 	"SEARCH_EXISTING",
 	"INTERVAL",
-	"MAX_ITEMS_PROCESSED_PER_RUN",
 }
 
 const (
@@ -43,7 +42,6 @@ type loadConfigTestCase struct {
 	wantMovie       string
 	wantSearchAdded bool
 	wantSearchExist bool
-	wantMaxItems    int
 	wantErrContains []string
 }
 
@@ -63,21 +61,18 @@ func TestLoad(t *testing.T) {
 			wantMovie:       "Movies",
 			wantSearchAdded: true,
 			wantSearchExist: true,
-			wantMaxItems:    defaultMaxItemsProcessedPerRun,
 		},
 		{
 			name: "runtime env takes precedence over dot env",
 			env: map[string]string{
-				"PLEX_URL":                    testRuntimePlexURL,
-				"PLEX_TOKEN":                  "runtime-token",
-				"PLEX_TV_COLLECTION":          "Runtime TV",
-				"PLEX_MOVIE_COLLECTION":       "Runtime Movies",
-				"MAX_ITEMS_PROCESSED_PER_RUN": "12",
+				"PLEX_URL":              testRuntimePlexURL,
+				"PLEX_TOKEN":            "runtime-token",
+				"PLEX_TV_COLLECTION":    "Runtime TV",
+				"PLEX_MOVIE_COLLECTION": "Runtime Movies",
 			},
-			dotEnv:       "PLEX_URL=http://dotenv\nPLEX_TOKEN=dotenv-token\nPLEX_TV_COLLECTION=DotEnv TV\nPLEX_MOVIE_COLLECTION=DotEnv Movies\nMAX_ITEMS_PROCESSED_PER_RUN=7\n",
-			wantTV:       "Runtime TV",
-			wantMovie:    "Runtime Movies",
-			wantMaxItems: 12,
+			dotEnv:    "PLEX_URL=http://dotenv\nPLEX_TOKEN=dotenv-token\nPLEX_TV_COLLECTION=DotEnv TV\nPLEX_MOVIE_COLLECTION=DotEnv Movies\n",
+			wantTV:    "Runtime TV",
+			wantMovie: "Runtime Movies",
 		},
 		{
 			name: "missing plex url",
@@ -114,15 +109,6 @@ func TestLoad(t *testing.T) {
 				"SEARCH_EXISTING": "nope",
 			},
 			wantErrContains: []string{"parsing SEARCH_EXISTING"},
-		},
-		{
-			name: "invalid max items processed per run",
-			env: map[string]string{
-				"PLEX_URL":                    testPlexURL,
-				"PLEX_TOKEN":                  "token",
-				"MAX_ITEMS_PROCESSED_PER_RUN": "0",
-			},
-			wantErrContains: []string{"MAX_ITEMS_PROCESSED_PER_RUN must be greater than 0"},
 		},
 	}
 
@@ -182,9 +168,6 @@ func assertLoadedConfig(t *testing.T, cfg *Config, tt loadConfigTestCase) {
 	}
 	if cfg.SearchExisting != tt.wantSearchExist {
 		t.Fatalf("SearchExisting = %t, want %t", cfg.SearchExisting, tt.wantSearchExist)
-	}
-	if cfg.MaxItemsProcessedPerRun != tt.wantMaxItems {
-		t.Fatalf("MaxItemsProcessedPerRun = %d, want %d", cfg.MaxItemsProcessedPerRun, tt.wantMaxItems)
 	}
 }
 

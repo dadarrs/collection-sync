@@ -377,7 +377,6 @@ func (c *SyncTVCmd) Run(d *deps) error {
 	}
 
 	targets := buildTVSyncTargets(items)
-	targets = limitSyncTargets(targets, c.Number, d.cfg.MaxItemsProcessedPerRun)
 	lookupCache := make(map[string]cachedLookup)
 	statusCounts := make(map[string]int)
 	var defaults sonarr.AddSeriesDefaults
@@ -421,7 +420,6 @@ func (c *SyncMoviesCmd) Run(d *deps) error {
 	}
 
 	targets := buildMovieSyncTargets(items)
-	targets = limitSyncTargets(targets, c.Number, d.cfg.MaxItemsProcessedPerRun)
 	lookupCache := make(map[string]cachedMovieLookup)
 	statusCounts := make(map[string]int)
 	var defaults radarr.AddMovieDefaults
@@ -1052,14 +1050,6 @@ func selectMovieSyncItems(items []plex.Item, rowNumber *int) ([]plex.Item, error
 		return nil, fmt.Errorf("movie row %d is out of range; valid rows are 1-%d", *rowNumber, len(items))
 	}
 	return []plex.Item{items[*rowNumber-1]}, nil
-}
-
-func limitSyncTargets[T any](targets []T, rowNumber *int, maxItems int) []T {
-	if rowNumber != nil || maxItems <= 0 || len(targets) <= maxItems {
-		return targets
-	}
-
-	return targets[:maxItems]
 }
 
 func (t tvSyncTarget) seasonNumbers() []int {
