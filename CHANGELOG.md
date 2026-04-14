@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/dadarrs/collection-sync/compare/v0.1.4...v0.1.5) (2026-04-14)
+
+
+### Bug Fixes
+
+* update SonarQube scan condition to exclude Dependabot ([#38](https://github.com/dadarrs/collection-sync/issues/38)) ([af20b09](https://github.com/dadarrs/collection-sync/commit/af20b09f751670831ea09220d049cc225db3295a))
+
 ## [0.1.4](https://github.com/dadarrs/collection-sync/compare/v0.1.3...v0.1.4) (2026-04-12)
 
 
