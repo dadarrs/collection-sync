@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -1716,6 +1717,52 @@ func appendError(errs []error, err error) []error {
 	return append(errs, err)
 }
 
+func defaultBatchStatePath(path string) string {
+	if path == "" || filepath.IsAbs(path) || filepath.Dir(path) != "." {
+		return path
+	}
+
+	workingDir, err := os.Getwd()
+	if err == nil && dirWritable(workingDir) {
+		return filepath.Join(workingDir, path)
+	}
+
+	stateDir := defaultUserStateDir()
+	if stateDir == "" {
+		return path
+	}
+
+	return filepath.Join(stateDir, "collection-sync", path)
+}
+
+func defaultUserStateDir() string {
+	if stateDir := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); stateDir != "" {
+		return stateDir
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	homeDir = strings.TrimSpace(homeDir)
+	if homeDir == "" {
+		return ""
+	}
+
+	return filepath.Join(homeDir, ".local", "state")
+}
+
+func dirWritable(path string) bool {
+	probe, err := os.CreateTemp(path, ".collection-sync-write-*")
+	if err != nil {
+		return false
+	}
+	probeName := probe.Name()
+	closeErr := probe.Close()
+	removeErr := os.Remove(probeName)
+	return closeErr == nil && removeErr == nil
+}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
@@ -1735,7 +1782,7 @@ func main() {
 		plex:       plexClient,
 		radarr:     radarr.New(cfg.RadarrURL, cfg.RadarrAPIKey),
 		sonarr:     sonarr.New(cfg.SonarrURL, cfg.SonarrAPIKey),
-		batchState: batchstate.New(batchStateFileName),
+		batchState: batchstate.New(defaultBatchStatePath(batchStateFileName)),
 		ui:         renderer,
 	}
 

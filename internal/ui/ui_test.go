@@ -40,6 +40,7 @@ func TestRendererHelpers(t *testing.T) {
 	r := Stdout()
 	if r == nil {
 		t.Fatal("Stdout() = nil")
+		return
 	}
 	if r.out != os.Stdout {
 		t.Fatalf("Stdout().out = %v, want os.Stdout", r.out)

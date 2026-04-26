@@ -145,4 +145,4 @@ Copy `.env.example` to `.env` and set the variables below.
 
 Reliable matching depends on Plex metadata exposing TVDB IDs for TV items and TMDB IDs for movies.
 
-The app stores batch progress in `.collection-sync-state.json` in the working directory so later runs can continue with the remaining eligible targets in the current cycle.
+The app stores batch progress in `.collection-sync-state.json` in the working directory when it is writable. If the current directory is not writable, it falls back to `$XDG_STATE_HOME/collection-sync/` or `$HOME/.local/state/collection-sync/` so later runs can continue with the remaining eligible targets in the current cycle.
