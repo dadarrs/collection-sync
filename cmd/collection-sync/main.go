@@ -13,7 +13,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
 	// Importing time/tzdata ensures the binary includes the IANA time zone database, allowing time.LoadLocation to work even if the host system doesn't have the tzdata installed.
 	// This is important for correctly handling time zones when formatting the next scheduled run time in the interval sync status output.
 	_ "time/tzdata"
