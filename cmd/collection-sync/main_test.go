@@ -638,6 +638,89 @@ func TestMovieSyncBatchStateFallsBackFromUnwritableWorkingDirectory(t *testing.T
 	}
 }
 
+func TestDefaultBatchStatePathUsesWorkingDirectoryWhenWritable(t *testing.T) {
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	t.Setenv("XDG_STATE_HOME", filepath.Join(t.TempDir(), "state"))
+
+	if got, want := defaultBatchStatePath(batchStateFileName), filepath.Join(workingDir, batchStateFileName); got != want {
+		t.Fatalf("defaultBatchStatePath() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultBatchStatePathKeepsExplicitPaths(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	tests := []string{
+		"",
+		filepath.Join(t.TempDir(), batchStateFileName),
+		filepath.Join("state", batchStateFileName),
+	}
+
+	for _, path := range tests {
+		if got := defaultBatchStatePath(path); got != path {
+			t.Fatalf("defaultBatchStatePath(%q) = %q, want unchanged", path, got)
+		}
+	}
+}
+
+func TestDefaultBatchStatePathReturnsOriginalWhenFallbackUnavailable(t *testing.T) {
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("HOME", "   ")
+	if err := os.Chmod(workingDir, 0o555); err != nil {
+		t.Fatalf("Chmod(%q) error = %v", workingDir, err)
+	}
+	defer func() {
+		_ = os.Chmod(workingDir, 0o755)
+	}()
+
+	if got := defaultBatchStatePath(batchStateFileName); got != batchStateFileName {
+		t.Fatalf("defaultBatchStatePath() = %q, want %q", got, batchStateFileName)
+	}
+}
+
+func TestDefaultUserStateDir(t *testing.T) {
+	t.Run("prefers xdg state home", func(t *testing.T) {
+		stateHome := filepath.Join(t.TempDir(), "state")
+		t.Setenv("XDG_STATE_HOME", stateHome)
+		t.Setenv("HOME", filepath.Join(t.TempDir(), "home"))
+
+		if got := defaultUserStateDir(); got != stateHome {
+			t.Fatalf("defaultUserStateDir() = %q, want %q", got, stateHome)
+		}
+	})
+
+	t.Run("falls back to home", func(t *testing.T) {
+		t.Setenv("XDG_STATE_HOME", "")
+		homeDir := filepath.Join(t.TempDir(), "home")
+		t.Setenv("HOME", homeDir)
+
+		if got, want := defaultUserStateDir(), filepath.Join(homeDir, ".local", "state"); got != want {
+			t.Fatalf("defaultUserStateDir() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("blank home returns empty", func(t *testing.T) {
+		t.Setenv("XDG_STATE_HOME", "")
+		t.Setenv("HOME", "   ")
+
+		if got := defaultUserStateDir(); got != "" {
+			t.Fatalf("defaultUserStateDir() = %q, want empty", got)
+		}
+	})
+}
+
+func TestDirWritable(t *testing.T) {
+	if !dirWritable(t.TempDir()) {
+		t.Fatal("dirWritable() = false, want true for temp dir")
+	}
+	if dirWritable(filepath.Join(t.TempDir(), "missing")) {
+		t.Fatal("dirWritable() = true, want false for missing dir")
+	}
+}
+
 func TestRunCommandUsesSharedBatchBudget(t *testing.T) {
 	cfg := baseConfig()
 	cfg.MaxItemsProcessedPerRun = 1

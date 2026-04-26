@@ -1759,8 +1759,8 @@ func dirWritable(path string) bool {
 	}
 	probeName := probe.Name()
 	closeErr := probe.Close()
-	_ = os.Remove(probeName)
-	return closeErr == nil
+	removeErr := os.Remove(probeName)
+	return closeErr == nil && removeErr == nil
 }
 
 func main() {
