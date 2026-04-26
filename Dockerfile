@@ -22,10 +22,16 @@ RUN export GOOS="${TARGETOS:-$(go env GOOS)}" && \
     -o /collection-sync \
     ./cmd/collection-sync
 
+RUN mkdir -p /home/collection-sync && chown 1000:1000 /home/collection-sync
+
 FROM scratch
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /collection-sync /collection-sync
+COPY --from=builder --chown=1000:1000 /home/collection-sync /home/collection-sync
+
+ENV HOME=/home/collection-sync
+WORKDIR /home/collection-sync
 
 USER 1000:1000
 

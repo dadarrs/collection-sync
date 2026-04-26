@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	starrradarr "golift.io/starr/radarr"
 	starrsonarr "golift.io/starr/sonarr"
 
+	"github.com/dadarrs/collection-sync/internal/batchstate"
 	"github.com/dadarrs/collection-sync/internal/config"
 	plexpkg "github.com/dadarrs/collection-sync/internal/plex"
 	radarrpkg "github.com/dadarrs/collection-sync/internal/radarr"
@@ -561,6 +563,77 @@ func TestMovieSyncBatchPersistsOnlySuccessfulTargets(t *testing.T) {
 	}
 	second := out.String()
 	if !strings.Contains(second, movieBTitle) || strings.Contains(second, movieATitle) {
+		t.Fatalf("second SyncMoviesCmd.Run() processed wrong titles: %q", second)
+	}
+}
+
+func TestMovieSyncBatchStateFallsBackFromUnwritableWorkingDirectory(t *testing.T) {
+	cfg := baseConfig()
+	cfg.MaxItemsProcessedPerRun = 2
+	d, out, _ := newTestDeps(cfg)
+	d.plex = fakePlexService{
+		findCollectionByName: func(context.Context, string) (string, error) { return "rk", nil },
+		getCollectionItems: func(context.Context, string) ([]plexpkg.Item, error) {
+			return []plexpkg.Item{
+				{Title: movieATitle, TMDBID: 1},
+				{Title: movieBTitle, TMDBID: 2},
+				{Title: movieCTitle, TMDBID: 3},
+			}, nil
+		},
+	}
+	d.radarr = fakeRadarrService{
+		findMovie: func(context.Context, string, int64) (*radarrpkg.MovieMatch, error) {
+			return nil, radarrpkg.ErrMovieNotFound
+		},
+		resolveAddMovieDefaults: func(context.Context, string, string) (radarrpkg.AddMovieDefaults, error) {
+			return radarrpkg.AddMovieDefaults{RootFolderPath: testMoviesRootPath, QualityProfileName: "HD"}, nil
+		},
+		createMovie: func(_ context.Context, request radarrpkg.CreateMovieRequest, _ radarrpkg.AddMovieDefaults) (*starrradarr.Movie, error) {
+			return &starrradarr.Movie{Title: request.Title}, nil
+		},
+	}
+
+	stateHome := filepath.Join(t.TempDir(), "state")
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	if err := os.Chmod(workingDir, 0o555); err != nil {
+		t.Fatalf("Chmod(%q) error = %v", workingDir, err)
+	}
+	defer func() {
+		_ = os.Chmod(workingDir, 0o755)
+	}()
+
+	statePath := defaultBatchStatePath(batchStateFileName)
+	d.batchState = batchstate.New(statePath)
+	if got, want := statePath, filepath.Join(stateHome, "collection-sync", batchStateFileName); got != want {
+		t.Fatalf("defaultBatchStatePath() = %q, want %q", got, want)
+	}
+
+	if err := (&SyncMoviesCmd{}).Run(d); err != nil {
+		t.Fatalf("first SyncMoviesCmd.Run() error = %v", err)
+	}
+	first := out.String()
+	if !strings.Contains(first, radarrTargetSummaryLabel) || !strings.Contains(first, "processing this run: 2") || !strings.Contains(first, "remaining after this run: 1") {
+		t.Fatalf("first SyncMoviesCmd.Run() output = %q", first)
+	}
+	if !strings.Contains(first, movieATitle) || !strings.Contains(first, movieBTitle) || strings.Contains(first, movieCTitle) {
+		t.Fatalf("first SyncMoviesCmd.Run() processed wrong titles: %q", first)
+	}
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("Stat(%q) error = %v", statePath, err)
+	}
+
+	out.Reset()
+	if err := (&SyncMoviesCmd{}).Run(d); err != nil {
+		t.Fatalf("second SyncMoviesCmd.Run() error = %v", err)
+	}
+	second := out.String()
+	if !strings.Contains(second, radarrTargetSummaryLabel) || !strings.Contains(second, "processing this run: 1") || !strings.Contains(second, "remaining after this run: 0") {
+		t.Fatalf("second SyncMoviesCmd.Run() output = %q", second)
+	}
+	if !strings.Contains(second, movieCTitle) || strings.Contains(second, movieATitle) || strings.Contains(second, movieBTitle) {
 		t.Fatalf("second SyncMoviesCmd.Run() processed wrong titles: %q", second)
 	}
 }
