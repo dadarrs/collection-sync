@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/dadarrs/collection-sync/compare/v0.1.5...v0.1.6) (2026-04-26)
+
+
+### Bug Fixes
+
+* enhance batch state handling and improve writable directory fallback logic ([#42](https://github.com/dadarrs/collection-sync/issues/42)) ([95dbca7](https://github.com/dadarrs/collection-sync/commit/95dbca7f1ae9c78c3f117bc985d9f223ca245037))
+
 ## [0.1.5](https://github.com/dadarrs/collection-sync/compare/v0.1.4...v0.1.5) (2026-04-14)
 
 
